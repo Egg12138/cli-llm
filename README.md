@@ -1,5 +1,8 @@
 # cli-llm
+
 for personal usage; command line LLM script
+
+```shell
 Usage: llm [OPTIONS] [PROMPT]
 
 Options:
@@ -20,3 +23,4 @@ Options:
                                   file.Only one code block is
                                   supported(IN PROGESS)
   --help                          Show this message and exit.
+```
