@@ -11,6 +11,8 @@ import signal
 from contextlib import contextmanager
 from datetime import datetime
 
+# TODO: reasoning_content field, show_reason option; 
+
 API_KEY = os.getenv('OPENAI_API_KEY')
 API_ENDPOINT = os.getenv('OPENAI_API_ENDPOINT')
 APIModels = ['coder', 'chat', 'creative']
@@ -49,8 +51,8 @@ CODER_SYS_ROLE_EXPLAIN_DETAILED = """
 
 
 SYS_ROLE = {
-        'deepseek-coder': CODER_SYS_ROLE_EXPLAIN_DETAILED
-        ,
+        'deepseek-coder': CODER_SYS_ROLE_EXPLAIN_DETAILED,
+        'deepseek-v3': CODER_SYS_ROLE_EXPLAIN_DETAILED,
         'deepseek-chat': '''
         You are a helpful assistant. You will answer my question in details instead of making a short summary. You have to explain the components and crutial concepts.
         Your ouput should consist of the answer and reference. 
@@ -86,19 +88,24 @@ def ensure_url_parser_ok():
   override_env_tmp('NO_PROXY',"localhost")
 #   override_env_tmp('NO_PROXY',"localhost,127.0.0.1,10.96.0.0/12")
 
-def highlight_code_blocks(content):
+def highlight_code_blocks(content, session_type='Context'):
     def replacer(matcher):
         return f'{CODEF}{matcher.group(0)}{RSTF}'
-    return re.sub(r'`(.*?)`', replacer, content, flags=re.DOTALL)
+    if session_type == 'Context':
+      return re.sub(r'`(.*?)`', replacer, content, flags=re.DOTALL)
+    if session_type == 'Reasoning':
+      return re.sub(r'`(.*?)`', replacer, content, flags=re.DOTALL)
 
 def sanitize_input(input_str):
     # 过滤掉退格、方向键等特殊字符
     sanitized_str = re.sub(r'[\x00-\x1F\x7F-\x9F\uD800-\uDFFF]', '', input_str)
     return sanitized_str
 
-def process_streamed_chunk(response):
+def process_streamed_chunk(response, extra_session_type=None):
     timenow()
     in_code_block = False
+    # maybe in future there are many different types of extra session
+        
     for chunk in response:
         content = chunk.choices[0].delta.content
         # highed_content = highlight_code_blocks(content)
@@ -114,7 +121,7 @@ def process_streamed_chunk(response):
         else:
             print(f'{RSTF}{content}', end='')
 
-def process_chunk(response, response_time):
+def process_unstreamed_chunk(response, response_time, extra_session_type=None):
     choice = response.choices[0]
     modelname = response.model
     finish_reason = choice.finish_reason
@@ -125,9 +132,14 @@ def process_chunk(response, response_time):
         'insufficient_system_resource': '系统推理资源不足， 生成被打断',
     }.get(finish_reason, '未知')
 
-    content = highlight_code_blocks(choice.message.content)
+    if extra_session_type is not None:
+      if extra_session_type == 'Reasoning':
+        print(f"{TIPF}@ {modelname} reasonning========================================={RSTF}")
+        resoning_output = choice.message.content        
+    answer = highlight_code_blocks(choice.message.content)
+    print(reasoning_output) 
     print(f"{TIPF}@ {modelname} [{finish_reason}] {response_time=:.2f}s:{RSTF}")
-    print(content)
+    print(answer)
 
 def test_c():
 
@@ -186,7 +198,16 @@ def chat_cli(prompt, no_stream, model, output_codes):
       case 'creative-R':
         model,temp = ('deepseek-reasoner', 1.5)
         sys_role_marker = 'deepseek-chat'
-
+    
+    if 'tencent' in API_ENDPOINT:
+      match model:
+        case 'deepseek-chat':
+          model = 'deepseek-v3'
+        case 'deepseek-coder':
+          model = 'deepseek-v3'
+        case 'deepseek-reasoner':
+          model = 'deepseek-r1'
+    
     chat(full_prompt, no_stream, model, temp, SYS_ROLE[sys_role_marker], client)
     
 
@@ -196,8 +217,10 @@ def chat(prompt, no_stream, model, temp, sys_role, client):
         {"role": "user", "content": prompt},
         ]
     start_time = time.time()
-    if model == 'deepseek-reasoner':
+      
+    if model == 'deepseek-reasoner' or model == 'deepseek-r1':
       no_stream = True
+      show_reasons = True
     
     try:
         if not no_stream:
@@ -222,7 +245,7 @@ def chat(prompt, no_stream, model, temp, sys_role, client):
                 temperature=temp,
                 )
             response_time = time.time() - start_time
-            process_chunk(response, response_time)
+            process_unstreamed_chunk(response, response_time, 'Reasoning')
 
             
          
@@ -262,8 +285,7 @@ def chat(prompt, no_stream, model, temp, sys_role, client):
                 print('解决方法：请稍后重试您的请求')
             case _:
                 print(f'{ERRF}错误码 {error_status_code} - 未知错误{RSTF}')
-                details = e.body
-                print(f'原因：{error_type}, {details=}')
+                print(f'原因：{error_type}, {e}')
                 print('解决方法：请稍后重试或联系技术支持')
     except Exception as e:
         timenow()
