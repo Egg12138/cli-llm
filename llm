@@ -7,10 +7,12 @@ import os
 import re
 import sys
 import select
+import signal
+from contextlib import contextmanager
 from datetime import datetime
 
-API_KEY = os.getenv('DEEPSEEK_API_KEY')
-API_ENDPOINT = 'https://api.deepseek.com/'
+API_KEY = os.getenv('OPENAI_API_KEY')
+API_ENDPOINT = os.getenv('OPENAI_API_ENDPOINT')
 APIModels = ['coder', 'chat', 'creative']
 APIModels = APIModels + [ ''.join([m, '-R']) for m in APIModels]
 USER = 'egg'
@@ -64,7 +66,25 @@ helps = {
     'model': f'{TIPF}Choose the model to use.default is coder. the deepseek-coder is not recommanded in CLI{RSTF}, Now DeepSeek-R1 Reansoner is available, append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
     'output-codes': f'{TIPF}Output the code to the target file.Only one code block is supported({DESCF}IN PROGESS{RSTF})'
 }
-client = openai.OpenAI(api_key=API_KEY, base_url=API_ENDPOINT)
+
+
+@contextmanager  
+def override_env_tmp(key, value):
+  original_value =  os.getenv(key)
+  print(f'{original_value=}')
+  os.environ[key] = value
+  yield
+  os.environ[key] = original_value
+
+def sigint_handler(sig, frame):
+    print('\nSIGINT received. exit')
+    sys.exit(0)
+
+def ensure_url_parser_ok():
+    # register sigint handler to recovering the environment variables.
+  signal.signal(signal.SIGINT, sigint_handler)
+  override_env_tmp('NO_PROXY',"localhost")
+#   override_env_tmp('NO_PROXY',"localhost,127.0.0.1,10.96.0.0/12")
 
 def highlight_code_blocks(content):
     def replacer(matcher):
@@ -112,8 +132,6 @@ def process_chunk(response, response_time):
 def test_c():
 
     timenow()
-    # FIXME: 流式传输，```可能分在多个chunk中
-    # FIXME: 假设了一般一次就是分两片，不会分更多片传代码块，但实际上是很可能的。暂时不考虑
     in_code_block = False
     for chunk in sys.stdin:
         content = chunk
@@ -131,22 +149,24 @@ def test_c():
             print(f'{RSTF}{content}', end='')   
 
 
+
 @click.command()
 @click.argument('prompt', required=False, default=None)
 @click.option('-p', '--prompt', help=helps['prompt'])
 @click.option('-n', '--no-stream', is_flag=True, help=helps['no-stream'])
 @click.option('-m', '--model', type=click.Choice(APIModels, case_sensitive=False), default='coder', help=helps['model'])
 @click.option('-o', '--output-codes', nargs=1, default=None, help=helps['output-codes'])
-def chat(prompt, no_stream, model, output_codes):
+def chat_cli(prompt, no_stream, model, output_codes):
     if prompt is None:
         prompt = input(f'{TIPF}[Ask]:{RSTF}')
-    start_time = time.time()
     prompt = sanitize_input(prompt)
     if select.select([sys.stdin], [], [], 0.0)[0]:
         stdin_input = sys.stdin.read().strip()
     else:
         stdin_input = ""
     full_prompt = '\n'.join([prompt, stdin_input])
+    ensure_url_parser_ok()
+    client = openai.OpenAI(api_key=API_KEY, base_url=API_ENDPOINT)
     match model:
       case 'coder':
         model,temp = ('deepseek-coder', 0.0)
@@ -166,11 +186,16 @@ def chat(prompt, no_stream, model, output_codes):
       case 'creative-R':
         model,temp = ('deepseek-reasoner', 1.5)
         sys_role_marker = 'deepseek-chat'
-    msg = [
-            {"role": "system", "content": SYS_ROLE[sys_role_marker] },
-            {"role": "user", "content": full_prompt},
-            ]
+
+    chat(full_prompt, no_stream, model, temp, SYS_ROLE[sys_role_marker], client)
     
+
+def chat(prompt, no_stream, model, temp, sys_role, client):
+    msg = [
+        {"role": "system", "content": sys_role },
+        {"role": "user", "content": prompt},
+        ]
+    start_time = time.time()
     if model == 'deepseek-reasoner':
       no_stream = True
     
@@ -183,7 +208,6 @@ def chat(prompt, no_stream, model, output_codes):
                 messages=msg,
                 temperature=temp,
                 stream=True,
-                # stream_options=True if stream else None)          
                 )
             process_streamed_chunk(response)
             response_time = time.time() - start_time
@@ -254,7 +278,7 @@ def handle_code_output(content, is_stream=False):
 def timenow():
     formatted = datetime.now().strftime("%H:%M:%S")
     print(formatted)
+
         
 if __name__ == '__main__':
-    chat()
-    # test_c()
+    chat_cli()
