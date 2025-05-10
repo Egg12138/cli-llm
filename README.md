@@ -1,3 +1,11 @@
+# TODO
+
+## Rust Version
+
+* Requesting works (currently it can not send anything)
+* Update vscode debug launch.json and task.json
+* Quicker render
+
 # cli-llm
 
 for personal usage; command line LLM script
