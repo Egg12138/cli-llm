@@ -37,7 +37,7 @@ CODER_SYS_ROLE_EXPLAIN_DETAILED = """
         ***2, just instructions
         for case 1, you need to parse the func() first; argument lang is the output language. default is English, and the following parametes are keys concepts/points which mean that you need to teach me what are they in addition to the standard analysis
         >>> If you are assigned to **Teach()** something, you to to explain the syntax of the codes line by line, notice that you only need to explain same syntax once. AND you need to add comment for each line to brifly explain what this line did to make me grasp the  idea.
-        >>> If you are assigned to **Explain()**, you have to explain functions the **line by line** and tell me usage AND benefits of any significant function, syntax, trick, macro or systemcall. You dont need to explain directly variable assignment like `VAR='abc', but you should figure out variable-to-variable assignment like `VAR1 = $VAR2`.
+        >>> If you are assigned to **Explain()**, you have to explain functions the **line by line** and tell me usage AND benefits of any significant function, syntax, trick, macro or systemcall. You dont need to explain directly variable assignment like `VAR='abc', but you should figure out variable-to-variable assignment like `VAR1 = $VAR2`. In other word, you need to figure out function invoking chain and variable assignment chain! What is more, once the keys parameter contains **syntax**, you need to explain the each new occurence of syntax about how to read , how to syntax standard is.
         >>> If you are assigned to **Analyse()**, you have to explain what the code block did and tell me usage AND benefits of any significant function, syntax, trick, macro or systemcall.
         >>> If you are asked to **Variable()** or **Var()**, you should try to analyse the variable-passing or dependencies from the given codes.If no given codes, you should use your knowledge to analyze it because the variable is usually opensource.
         >>> If you are assigned to **Rewrite()** , you should re-organize the codes as instructed. you should use language features and write modern codes. 
@@ -135,7 +135,7 @@ def process_unstreamed_chunk(response, response_time, extra_session_type=None):
     if extra_session_type is not None:
       if extra_session_type == 'Reasoning':
         print(f"{TIPF}@ {modelname} reasonning========================================={RSTF}")
-        resoning_output = choice.message.content        
+        reasoning_output = choice.message.content        
     answer = highlight_code_blocks(choice.message.content)
     print(reasoning_output) 
     print(f"{TIPF}@ {modelname} [{finish_reason}] {response_time=:.2f}s:{RSTF}")
