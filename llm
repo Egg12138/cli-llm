@@ -131,7 +131,9 @@ HELP_TEXTS = {
     'prompt': f'{TIPF}Input prompt for deepseek.{RSTF}',
     'no_stream': f'{TIPF}Disable streaming of the response.(faster but need to wait until all results are generated){RSTF}, {ERRF}model-R does not support stream!{RSTF}',
     'model': f'{TIPF}Choose the model to use. Default is coder. The deepseek-coder is not recommended in CLI{RSTF}, Now DeepSeek-R1 Reasoner is available, append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
-    'output_codes': f'{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})'
+    'output_codes': f'{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})',
+    'debug': f'{TIPF}Enable debug mode to show detailed logs.{RSTF}',
+    'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
 }
 
 def ensure_url_parser_ok() -> None:
@@ -141,7 +143,12 @@ def ensure_url_parser_ok() -> None:
     logger.info("URL parser configured successfully")
 
 def highlight_code_blocks(content: str, session_type: str = 'Context') -> str:
-    """Highlight code blocks in the given content using ANSI color codes."""
+    content = re.sub(
+        r'\*\*(.*?)\*\*',
+        lambda m: f'{COLORS.BOLD}{m.group(1)}{COLORS.RESET}',
+        content,
+        flags=re.DOTALL
+    )
     def replacer(matcher):
         return f'{CODEF}{matcher.group(0)}{RSTF}'
     
@@ -161,6 +168,12 @@ def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -
     for chunk in response:
         content = chunk.choices[0].delta.content if chunk.choices else None
         if content:
+            content = re.sub(
+                r'\*\*(.*?)\*\*',
+                lambda m: f'{COLORS.BOLD}{m.group(1)}{COLORS.RESET}',
+                content
+            )
+
             is_code = '`' in content
             if is_code and not in_code_block:
                 in_code_block = True
@@ -245,6 +258,9 @@ def chat(prompt: str, no_stream: bool, model: str, temp: float, sys_role: str, c
         error_type = e.type
         print(f"{error_type=}, {error_status_code=}") 
 
+def test_result():
+    print("test something")
+
 @click.command()
 @click.argument('prompt', required=False, default=None)
 @click.option('-p', '--prompt', help=HELP_TEXTS['prompt'])
@@ -252,8 +268,11 @@ def chat(prompt: str, no_stream: bool, model: str, temp: float, sys_role: str, c
 @click.option('-m', '--model', type=click.Choice(['coder', 'chat', 'creative', 'coder-R', 'chat-R', 'creative-R'], case_sensitive=False), 
               default='coder', help=HELP_TEXTS['model'])
 @click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
-@click.option('-d', '--debug', is_flag=True, help='Enable debug mode to show detailed logs.', default=False)
-def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: Optional[str], debug: bool) -> None:
+@click.option('-d', '--debug', is_flag=True, 
+              help=HELP_TEXTS['debug'], default=False)
+@click.option('-t', '--localtest', is_flag=True, 
+              help=HELP_TEXTS['test'], default=False)
+def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: Optional[str], debug: bool, localtest: bool) -> None:
     """Main CLI entry point for the LLM client."""
     if prompt is None:
         prompt = input(f'{TIPF}[Ask]:{RSTF}')
@@ -303,6 +322,9 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: O
         logger.setLevel(logging.DEBUG)
         for handler in logger.handlers:
             handler.setLevel(logging.DEBUG)
+    
+    if localtest:
+        return test_result()
 
     chat(full_prompt, no_stream, model_name, temp, SYS_ROLES[sys_role_marker], client)
 
