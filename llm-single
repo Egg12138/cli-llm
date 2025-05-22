@@ -17,46 +17,14 @@ from logging.handlers import RotatingFileHandler
 import os
 from enum import Enum
 from dataclasses import dataclass
+from prompts import SYS_ROLES, CODER_PROMPT
+
+# ============================================================================
+# Module: Configuration
+# ============================================================================
 
 API_KEY = os.getenv("OPENAI_API_KEY")
 API_ENDPOINT = os.getenv("OPENAI_API_ENDPOINT")
-
-def setup_logging(log_file: str = "/var/log/cli_llm.log", 
-                  max_bytes: int = 1024*1024,
-                  backup_count: int = 5) -> None:
-    """Configure logging to file and console with rotation."""
-    log_dir = os.path.dirname(log_file)
-    path = Path(log_file)
-    try:
-        path.touch(exist_ok=True)
-    except PermissionError:
-        # Fallback to user directory if permission denied in system paths
-        log_dir = os.path.expanduser('~/.cli_llm/logs')
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, 'cli_llm.log')
-
-    # Create rotating file handler
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=max_bytes,
-        backupCount=backup_count
-    )
-    
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    logger.addHandler(file_handler)
-    
-    # Console handler for interactive sessions
-    if sys.stdout.isatty():
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-
-setup_logging()
-logger = logging.getLogger(__name__)
 
 class ModelType(Enum):
     """Supported model types and their configurations."""
@@ -96,37 +64,6 @@ ERRF = f'{COLORS.RED}{COLORS.BOLD}'
 DESCF = f'{COLORS.BG_YELLOW}'
 RSTF = f'{COLORS.RESET}'
 
-CODER_SYS_ROLE_EXPLAIN_DETAILED = """
-    You are a helpful programmer assistant, well skilled in GNU/Linux development.
-    You will two kinds to command :
-    ***1. func(lang=English, keys=...) , instructions
-    ***2, just instructions
-    for case 1, you need to parse the func() first; argument lang is the output language. default is English, and the following parametes are keys concepts/points which mean that you need to teach me what are they in addition to the standard analysis
-    >>> If you are assigned to **Teach()** something, you to to explain the syntax of the codes line by line, notice that you only need to explain same syntax once. AND you need to add comment for each line to brifly explain what this line did to make me grasp the idea.
-    >>> If you are assigned to **Explain()**, you have to explain functions the **line by line** and tell me usage AND benefits of any significant function, syntax, trick, macro or systemcall. You dont need to explain directly variable assignment like `VAR='abc', but you should figure out variable-to-variable assignment like `VAR1 = $VAR2`. In other word, you need to figure out function invoking chain and variable assignment chain!
-    >>> If you are assigned to **Analyse()**, you have to explain what the code block did and tell me usage AND benefits of any significant function, syntax, trick, macro or systemcall.
-    >>> If you are asked to **Variable()** or **Var()**, you should try to analyse the variable-passing or dependencies from the given codes.If no given codes, you should use your knowledge to analyze it because the variable is usually opensource.
-    >>> If you are assigned to **Rewrite()** , you should re-organize the codes as instructed. you should use language features and write modern codes. 
-    
-    --- NOTICE ---
-    **** If you met some data like memory address, try to analyse something special about it (if needed)
-    **** Each code block should be closed to 2 empty lines 
-    **** When you are explaining a concept, if it is an abbreviation, you need to point out what it stands for
-"""
-
-SYS_ROLES = {
-    'deepseek-coder': CODER_SYS_ROLE_EXPLAIN_DETAILED,
-    'deepseek-v3': CODER_SYS_ROLE_EXPLAIN_DETAILED,
-    'deepseek-chat': """
-    You are a helpful assistant. You will answer my question in details instead of making a short summary. You have to explain the components and crucial concepts.
-    Your output should consist of the answer and reference. 
-    Each code block should be closed to 3 empty lines
-    """,
-    'deepseek-creative': """
-    You are a creative AI. 
-"""
-}
-
 HELP_TEXTS = {
     'prompt': f'{TIPF}Input prompt for deepseek.{RSTF}',
     'no_stream': f'{TIPF}Disable streaming of the response.(faster but need to wait until all results are generated){RSTF}, {ERRF}model-R does not support stream!{RSTF}',
@@ -136,19 +73,62 @@ HELP_TEXTS = {
     'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
 }
 
-def ensure_url_parser_ok() -> None:
-    """Set up URL parsing related environment variables and signal handling."""
-    signal.signal(signal.SIGINT, sigint_handler)
-    os.environ['NO_PROXY'] = 'localhost'
-    logger.info("URL parser configured successfully")
+# ============================================================================
+# Module: Logging
+# ============================================================================
+
+def setup_logging(log_file: str = "/var/log/cli_llm.log", 
+                  max_bytes: int = 1024*1024,
+                  backup_count: int = 5) -> None:
+    """Configure logging to file and console with rotation."""
+    log_dir = os.path.dirname(log_file)
+    path = Path(log_file)
+    try:
+        path.touch(exist_ok=True)
+    except PermissionError:
+        # Fallback to user directory if permission denied in system paths
+        log_dir = os.path.expanduser('~/.cli_llm/logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'cli_llm.log')
+
+    # Create rotating file handler
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+    
+    # Console handler for interactive sessions
+    if sys.stdout.isatty():
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Module: Text Processing
+# ============================================================================
 
 def highlight_code_blocks(content: str, session_type: str = 'Context') -> str:
+    """Highlight code blocks and bold text with ANSI escape sequences."""
+    # First handle bold text with **TEXT** format
     content = re.sub(
         r'\*\*(.*?)\*\*',
-        lambda m: f'{COLORS.BOLD}{m.group(1)}{COLORS.RESET}',
+        lambda m: f'{COLORS.BOLD}{COLORS.BLUE}{m.group(1)}{COLORS.RESET}',
         content,
         flags=re.DOTALL
     )
+    
+    # Then handle code blocks with `TEXT` format
     def replacer(matcher):
         return f'{CODEF}{matcher.group(0)}{RSTF}'
     
@@ -162,6 +142,10 @@ def sanitize_input(input_str: str) -> str:
     logger.debug(f"Input cleaned: {input_str[:50]}...")
     return sanitized_str
 
+# ============================================================================
+# Module: Response Processing
+# ============================================================================
+
 def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -> None:
     """Process and display streamed response chunks."""
     in_code_block = False
@@ -170,7 +154,7 @@ def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -
         if content:
             content = re.sub(
                 r'\*\*(.*?)\*\*',
-                lambda m: f'{COLORS.BOLD}{m.group(1)}{COLORS.RESET}',
+                lambda m: f'{COLORS.BOLD}{COLORS.BLUE}{m.group(1)}{COLORS.RESET}',
                 content
             )
 
@@ -185,7 +169,7 @@ def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -
                 print(f'{CODEF}{content}', end='')
             else:
                 print(f'{RSTF}{content}', end='')
-                
+
 def process_unstreamed_chunk(response, response_time: float, extra_session_type: Optional[str] = None) -> None:
     """Process and display non-streamed response."""
     choice = response.choices[0]
@@ -206,17 +190,24 @@ def process_unstreamed_chunk(response, response_time: float, extra_session_type:
     print(answer)
     print(f"{TIPF}@ {modelname} [{status}] Response time: {response_time:.2f}s:{RSTF}")
 
+# ============================================================================
+# Module: Signal Handling
+# ============================================================================
+
 def sigint_handler(sig: int, frame: Any) -> None:
     """Handle SIGINT signal gracefully."""
     print('\nSIGINT received. Exiting...')
     sys.exit(0)
 
-def get_model_config(model_type: ModelType) -> Dict[str, Any]:
-    """Get configuration for the specified model type."""
-    config = MODEL_CONFIGS.get(model_type)
-    if not config:
-        raise ValueError(f"Unsupported model type: {model_type}")
-    return config
+def ensure_url_parser_ok() -> None:
+    """Set up URL parsing related environment variables and signal handling."""
+    signal.signal(signal.SIGINT, sigint_handler)
+    os.environ['NO_PROXY'] = 'localhost'
+    logger.info("URL parser configured successfully")
+
+# ============================================================================
+# Module: Core Chat Functionality
+# ============================================================================
 
 def chat(prompt: str, no_stream: bool, model: str, temp: float, sys_role: str, client: Any) -> None:
     """Send a chat request to the LLM API and handle the response."""
@@ -256,9 +247,14 @@ def chat(prompt: str, no_stream: bool, model: str, temp: float, sys_role: str, c
         logger.error(f"OpenAI API Error: {e}", exc_info=True)
         error_status_code = int(e.message.split('-')[0].strip()[-3:])
         error_type = e.type
-        print(f"{error_type=}, {error_status_code=}") 
+        print(f"{error_type=}, {error_status_code=}")
+
+# ============================================================================
+# Module: CLI Interface
+# ============================================================================
 
 def test_result():
+    """Run test functions."""
     print("test something")
 
 @click.command()

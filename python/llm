@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""Simple CLI LLM client in a single file"""
+import click
+import openai
+import time
+import os
+import re
+import sys
+import select
+import signal
+from pathlib import Path
+from typing import Optional, Dict, Any
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+from enum import Enum
+from dataclasses import dataclass
+import prompts
+from prompts import SYS_ROLES
+
+# ============================================================================
+# Module: Configuration
+# ============================================================================
+
+API_KEY = os.getenv("OPENAI_API_KEY")
+API_ENDPOINT = os.getenv("OPENAI_API_ENDPOINT")
+
+class ModelType(Enum):
+    """Supported model types and their configurations."""
+    CODER = "coder"
+    CHAT = "chat"
+    CREATIVE = "creative"
+    CODER_REASONER = "coder-R"
+    CHAT_REASONER = "chat-R"
+    CREATIVE_REASONER = "creative-R"
+
+    @property
+    def config(self) -> Dict[str, Any]:
+        return {
+            ModelType.CODER: {'model_name': 'deepseek-coder', 'temp': 0.0},
+            ModelType.CHAT: {'model_name': 'deepseek-chat', 'temp': 1.3},
+            ModelType.CREATIVE: {'model_name': 'deepseek-chat', 'temp': 1.5},
+            ModelType.CODER_REASONER: {'model_name': 'deepseek-reasoner', 'temp': 0.0},
+            ModelType.CHAT_REASONER: {'model_name': 'deepseek-reasoner', 'temp': 1.3},
+            ModelType.CREATIVE_REASONER: {'model_name': 'deepseek-reasoner', 'temp': 1.5},
+        }[self]
+
+@dataclass
+class ColorCodes:
+    """ANSI color codes for terminal output formatting."""
+    RED: str = '\033[91m'
+    BOLD: str = '\033[1m'
+    BLUE: str = '\033[94m'
+    MEGANT: str = '\033[35m'
+    RESET: str = '\033[0m'
+    BG_YELLOW: str = '\033[43m'
+
+# Initialize color codes
+COLORS = ColorCodes()
+TIPF = f'{COLORS.BLUE}{COLORS.BOLD}'
+CODEF = f'{COLORS.MEGANT}{COLORS.BOLD}'
+ERRF = f'{COLORS.RED}{COLORS.BOLD}'
+DESCF = f'{COLORS.BG_YELLOW}'
+RSTF = f'{COLORS.RESET}'
+
+HELP_TEXTS = {
+    'prompt': f'{TIPF}Input prompt for deepseek.{RSTF}',
+    'no_stream': f'{TIPF}Disable streaming of the response.(faster but need to wait until all results are generated){RSTF}, {ERRF}model-R does not support stream!{RSTF}',
+    'model': f'{TIPF}Choose the model to use. Default is coder. The deepseek-coder is not recommended in CLI{RSTF}, Now DeepSeek-R1 Reasoner is available, append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
+    'output_codes': f'{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})',
+    'debug': f'{TIPF}Enable debug mode to show detailed logs.{RSTF}',
+    'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
+}
+
+# ============================================================================
+# Module: Logging
+# ============================================================================
+
+def setup_logging(log_file: str = "/var/log/cli_llm.log", 
+                  max_bytes: int = 1024*1024,
+                  backup_count: int = 5) -> None:
+    """Configure logging to file and console with rotation."""
+    log_dir = os.path.dirname(log_file)
+    path = Path(log_file)
+    try:
+        path.touch(exist_ok=True)
+    except PermissionError:
+        # Fallback to user directory if permission denied in system paths
+        log_dir = os.path.expanduser('~/.cli_llm/logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'cli_llm.log')
+
+    # Create rotating file handler
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+    
+    # Console handler for interactive sessions
+    if sys.stdout.isatty():
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Module: Text Processing
+# ============================================================================
+
+def highlight_code_blocks(content: str, session_type: str = 'Context') -> str:
+    """Highlight code blocks and bold text with ANSI escape sequences."""
+    # First handle bold text with **TEXT** format
+    content = re.sub(
+        r'\*\*(.*?)\*\*',
+        lambda m: f'{COLORS.BOLD}{COLORS.BLUE}{m.group(1)}{COLORS.RESET}',
+        content,
+        flags=re.DOTALL
+    )
+    
+    # Then handle code blocks with `TEXT` format
+    def replacer(matcher):
+        return f'{CODEF}{matcher.group(0)}{RSTF}'
+    
+    if session_type in ('Context', 'Reasoning'):
+        return re.sub(r'`(.*?)`', replacer, content, flags=re.DOTALL)
+    return content
+
+def sanitize_input(input_str: str) -> str:
+    """Clean special characters from the input string."""
+    sanitized_str = re.sub(r'[\x00-\x1F\x7F-\x9F\uD800-\uDFFF]', '', input_str)
+    logger.debug(f"Input cleaned: {input_str[:50]}...")
+    return sanitized_str
+
+# ============================================================================
+# Module: Response Processing
+# ============================================================================
+
+def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -> None:
+    """Process and display streamed response chunks."""
+    in_code_block = False
+    for chunk in response:
+        content = chunk.choices[0].delta.content if chunk.choices else None
+        if content:
+            content = re.sub(
+                r'\*\*(.*?)\*\*',
+                lambda m: f'{COLORS.BOLD}{COLORS.BLUE}{m.group(1)}{COLORS.RESET}',
+                content
+            )
+
+            is_code = '`' in content
+            if is_code and not in_code_block:
+                in_code_block = True
+                print(f'{CODEF}{content}', end='')
+            elif is_code and in_code_block:
+                in_code_block = False
+                print(f'{CODEF}{content}{RSTF}', end='')
+            elif not is_code and in_code_block:
+                print(f'{CODEF}{content}', end='')
+            else:
+                print(f'{RSTF}{content}', end='')
+
+def process_unstreamed_chunk(response, response_time: float, extra_session_type: Optional[str] = None) -> None:
+    """Process and display non-streamed response."""
+    choice = response.choices[0]
+    modelname = response.model
+    finish_reason = choice.finish_reason
+    finish_reason_map = {
+        'stop': 'Normal',
+        'length': 'Length exceeded max_tokens limit',
+        'content_filter': 'Content filter triggered',
+        'insufficient_system_resource': 'Insufficient system resources',
+    }
+    status = finish_reason_map.get(finish_reason, 'Unknown')
+
+    if extra_session_type == 'Reasoning':
+        print(f"{TIPF}@ {modelname} reasoning ========================================={RSTF}")
+        
+    answer = highlight_code_blocks(choice.message.content)
+    print(answer)
+    print(f"{TIPF}@ {modelname} [{status}] Response time: {response_time:.2f}s:{RSTF}")
+
+# ============================================================================
+# Module: Signal Handling
+# ============================================================================
+
+def sigint_handler(sig: int, frame: Any) -> None:
+    """Handle SIGINT signal gracefully."""
+    print('\nSIGINT received. Exiting...')
+    sys.exit(0)
+
+def ensure_url_parser_ok() -> None:
+    """Set up URL parsing related environment variables and signal handling."""
+    signal.signal(signal.SIGINT, sigint_handler)
+    os.environ['NO_PROXY'] = 'localhost'
+    logger.info("URL parser configured successfully")
+
+# ============================================================================
+# Module: Core Chat Functionality
+# ============================================================================
+
+def chat(prompt: str, no_stream: bool, model: str, temp: float, sys_role: str, client: Any) -> None:
+    """Send a chat request to the LLM API and handle the response."""
+    msg = [
+        {"role": "system", "content": sys_role},
+        {"role": "user", "content": prompt},
+    ]
+    start_time = time.time()
+    try:
+        if not no_stream:
+            logger.info(f"Sending streaming request to model: {model}")
+            print(f'{TIPF}Sending...{RSTF}')
+            response = client.chat.completions.create(
+                model=model,
+                messages=msg,
+                temperature=temp,
+                stream=True,
+            )
+            process_streamed_chunk(response)
+            response_time = time.time() - start_time
+            logger.info(f"Streaming response processed in {response_time:.2f}s")
+            print(f"\n{TIPF}Response time: {response_time:.2f}s{RSTF}")     
+
+        else:
+            logger.info(f"Sending non-streaming request to model: {model}")
+            print(f'{TIPF}Sending...{RSTF}')
+            response = client.chat.completions.create(
+                model=model,
+                messages=msg,
+                temperature=temp,
+            )
+            response_time = time.time() - start_time
+            logger.info(f"Non-streaming response processed in {response_time:.2f}s")
+            process_unstreamed_chunk(response, response_time, 'Reasoning')
+
+    except openai.APIError as e:
+        logger.error(f"OpenAI API Error: {e}", exc_info=True)
+        error_status_code = int(e.message.split('-')[0].strip()[-3:])
+        error_type = e.type
+        print(f"{error_type=}, {error_status_code=}")
+
+# ============================================================================
+# Module: CLI Interface
+# ============================================================================
+
+def test_result():
+    """Run test functions."""
+    print(f"{prompts.SystemPrompt=}")
+    print(f"{prompts.CODER_PROMPT=}")
+    print("test something")
+
+@click.command()
+@click.argument('prompt', required=False, default=None)
+@click.option('-p', '--prompt', help=HELP_TEXTS['prompt'])
+@click.option('-n', '--no-stream', is_flag=True, help=HELP_TEXTS['no_stream'])
+@click.option('-m', '--model', type=click.Choice(['coder', 'chat', 'creative', 'coder-R', 'chat-R', 'creative-R'], case_sensitive=False), 
+              default='coder', help=HELP_TEXTS['model'])
+@click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
+@click.option('-d', '--debug', is_flag=True, 
+              help=HELP_TEXTS['debug'], default=False)
+@click.option('-t', '--localtest', is_flag=True, 
+              help=HELP_TEXTS['test'], default=False)
+def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: Optional[str], debug: bool, localtest: bool) -> None:
+    """Main CLI entry point for the LLM client."""
+    if prompt is None:
+        prompt = input(f'{TIPF}[Ask]:{RSTF}')
+    prompt = sanitize_input(prompt)
+    
+    if select.select([sys.stdin], [], [], 0.0)[0]:
+        stdin_input = sys.stdin.read().strip()
+    else:
+        stdin_input = ""
+    
+    full_prompt = '\n'.join([prompt, stdin_input])
+    ensure_url_parser_ok()
+    
+    client = openai.OpenAI(api_key=API_KEY, base_url=API_ENDPOINT)
+    
+    # Map model selection to actual model names and parameters
+    if model == 'coder':
+        model_name, temp = 'deepseek-coder', 0.0
+        sys_role_marker = 'deepseek-coder'
+    elif model == 'coder-R':
+        model_name, temp = 'deepseek-reasoner', 0.0
+        sys_role_marker = 'deepseek-coder'
+    elif model == 'chat':
+        model_name, temp = 'deepseek-chat', 1.3
+        sys_role_marker = 'deepseek-chat'
+    elif model == 'chat-R': 
+        model_name, temp = 'deepseek-reasoner', 1.3
+        sys_role_marker = 'deepseek-chat'
+    elif model == 'creative':
+        model_name, temp = 'deepseek-chat', 1.5
+        sys_role_marker = 'deepseek-chat'
+    elif model == 'creative-R':
+        model_name, temp = 'deepseek-reasoner', 1.5
+        sys_role_marker = 'deepseek-chat'
+    else:
+        raise ValueError(f"Unsupported model: {model}")
+
+    # Handle Tencent-specific model mappings
+    if 'tencent' in API_ENDPOINT.lower():
+        model_name = {
+            'deepseek-chat': 'deepseek-v3',
+            'deepseek-coder': 'deepseek-v3',
+            'deepseek-reasoner': 'deepseek-r1'
+        }.get(model_name, model_name)
+
+    if debug:
+        logger.setLevel(logging.DEBUG)
+        for handler in logger.handlers:
+            handler.setLevel(logging.DEBUG)
+    
+    if localtest:
+        return test_result()
+
+    chat(full_prompt, no_stream, model_name, temp, SYS_ROLES[sys_role_marker], client)
+
+def main() -> None:
+    """Main entry point for the application."""
+    try:
+        chat_cli()
+    except Exception as e:
+        logger.error(f"Application error: {e}", exc_info=True)
+        print(f"{ERRF}fatal: {str(e)}{RSTF}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

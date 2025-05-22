@@ -1,1 +1,5 @@
 /target
+/rust/target
+.vscode
+.pytest_cache
+__pycache__
