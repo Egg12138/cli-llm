@@ -31,9 +31,6 @@ cli-llm/
 ### Installation
 
 ```bash
-# From PyPI
-pip install cli-llm
-
 # From source
 cd python
 pip install -e .
