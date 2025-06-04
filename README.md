@@ -1,5 +1,23 @@
 # TODO
 
+## support custome 3rd party model (OpenAI API)
+
+### directly set by literal
+
+```shell
+llm -m coder-R # definded models
+llm -m QWen3 --vendor dashscope # using dashscope `QWen3` model 
+```
+
+### import models config list
+
+add a pair of subcommands: `llm import` and `llm export`
+
+```
+llm import models.toml
+llm export -o loaded_modles.toml
+```
+
 ## Rust Version
 
 * Requesting works (currently it can not send anything)
@@ -40,6 +58,8 @@ pip install -e .
 
 ```bash
 llm "Your question here"
+cat /etc/os-release | llm 'Explain(key=meaning of items, strict=True)'
+cat *.c | llm 'InvokingChain(lang=Chinese, strict=True)'
 ```
 
 ### Features
@@ -55,11 +75,9 @@ cd rust
 cargo install --path .
 ```
 
-### Features (Planned)
-- High performance implementation
-- Memory efficient
-- Native binary distribution
-- Cross-platform support
+### Features ()
+- Faster parsing
+- Faster transfer
 
 ## Configuration
 
