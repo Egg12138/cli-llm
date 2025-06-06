@@ -1,5 +1,13 @@
 # TODO
 
+## convert prompt function to command for token saving
+
+Before:
+`cat something | llm 'Explain(lang=Chinese, strict=True, key=concepts)'`
+
+After:
+`cat something | llm explan --strict --key concepts`
+
 ## support custome 3rd party model (OpenAI API)
 
 ### directly set by literal
@@ -8,6 +16,7 @@
 llm -m coder-R # definded models
 llm -m QWen3 --vendor dashscope # using dashscope `QWen3` model 
 ```
+
 
 ### import models config list
 
