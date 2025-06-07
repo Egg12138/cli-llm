@@ -10,6 +10,9 @@ After:
 
 ## support custome 3rd party model (OpenAI API)
 
+[x] Finished custom model (should setup url & key in ENV) support.
+[] Write a huge (`url:key:model_lists`) mapping. and show them via `llm --list`
+
 ### directly set by literal
 
 ```shell
