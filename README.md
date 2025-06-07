@@ -1,5 +1,8 @@
 # TODO
 
+## FATAL: 三种models manager混用了，要选择一个最好的方式保留
+
+
 ## convert prompt function to command for token saving
 
 Before:
@@ -9,6 +12,9 @@ After:
 `cat something | llm explan --strict --key concepts`
 
 ## support custome 3rd party model (OpenAI API)
+
+[x] Finished custom model (should setup url & key in ENV) support.
+[] Write a huge (`url:key:model_lists`) mapping. and show them via `llm --list`
 
 ### directly set by literal
 
