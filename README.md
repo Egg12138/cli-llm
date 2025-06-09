@@ -23,7 +23,6 @@ llm -m coder-R # definded models
 llm -m QWen3 --vendor dashscope # using dashscope `QWen3` model 
 ```
 
-
 ### import models config list
 
 add a pair of subcommands: `llm import` and `llm export`

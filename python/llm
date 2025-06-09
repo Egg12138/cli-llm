@@ -16,7 +16,7 @@ import os
 from enum import Enum
 from dataclasses import dataclass
 import prompts
-from prompts import SYS_ROLES, MODEL_TEMPERATURES
+from prompts import SYS_ROLES
 
 # ============================================================================
 # Module: Configuration
@@ -66,13 +66,10 @@ RSTF = f'{COLORS.RESET}'
 HELP_TEXTS = {
     'prompt': f'{TIPF}Input prompt for deepseek.{RSTF}',
     'no_stream': f'{TIPF}Disable streaming of the response.(faster but need to wait until all results are generated){RSTF}, {ERRF}model-R does not support stream!{RSTF}',
-    'model': f'{TIPF}Choose the model to use. You can use predefined shortcuts (coder, chat, creative, coder-R, chat-R, creative-R) or specify a custom model name directly. Default is coder.{RSTF}',
+    'model': f'{TIPF}Choose the model to use. Default is coder. The deepseek-coder is not recommended in CLI{RSTF}, Now DeepSeek-R1 Reasoner is available, append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
     'output_codes': f'{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})',
     'debug': f'{TIPF}Enable debug mode to show detailed logs.{RSTF}',
     'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
-    'role': f'{TIPF}The role of the model.  default is `coder`, options: [coder, chat]{RSTF}',
-    'temp': f'{TIPF}Temperature of the model. default is 0.5{RSTF}',
-    
 }
 
 # ============================================================================
@@ -265,15 +262,14 @@ def test_result():
 @click.argument('prompt', required=False, default=None)
 @click.option('-p', '--prompt', help=HELP_TEXTS['prompt'])
 @click.option('-n', '--no-stream', is_flag=True, help=HELP_TEXTS['no_stream'])
-@click.option('-m', '--model', default='coder', help=HELP_TEXTS['model'])
-@click.option('-r', '--role', default='coder', type=click.Choice(['coder', 'chat'], case_sensitive=False), help=HELP_TEXTS['role'])
-@click.option('-t', '--temp', default=None, help=HELP_TEXTS['temp'])
+@click.option('-m', '--model', type=click.Choice(['coder', 'chat', 'creative', 'coder-R', 'chat-R', 'creative-R'], case_sensitive=False), 
+              default='coder', help=HELP_TEXTS['model'])
 @click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
 @click.option('-d', '--debug', is_flag=True, 
               help=HELP_TEXTS['debug'], default=False)
-@click.option('-l', '--localtest', is_flag=True, 
+@click.option('-t', '--localtest', is_flag=True, 
               help=HELP_TEXTS['test'], default=False)
-def chat_cli(prompt: Optional[str], no_stream: bool, model: str, role: str, temp: float, output_codes: Optional[str], debug: bool, localtest: bool) -> None:
+def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: Optional[str], debug: bool, localtest: bool) -> None:
     """Main CLI entry point for the LLM client."""
     if prompt is None:
         prompt = input(f'{TIPF}[Ask]:{RSTF}')
@@ -288,8 +284,6 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, role: str, temp
     ensure_url_parser_ok()
     
     client = openai.OpenAI(api_key=API_KEY, base_url=API_ENDPOINT)
-
-    preset_model = True
     
     # Map model selection to actual model names and parameters
     if model == 'coder':
@@ -311,13 +305,16 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, role: str, temp
         model_name, temp = 'deepseek-reasoner', 1.5
         sys_role_marker = 'deepseek-chat'
     else:
-        # For custom models, use the model name directly with default settings
-        model_name = model
-        preset_model = False
-        sys_role_marker = 'deepseek-coder' if role == 'coder' else 'deepseek-chat'
-    
-    temp = MODEL_TEMPERATURES[sys_role_marker] if temp is None else float(temp)
-        
+        raise ValueError(f"Unsupported model: {model}")
+
+    # Handle Tencent-specific model mappings
+    if 'tencent' in API_ENDPOINT.lower():
+        model_name = {
+            'deepseek-chat': 'deepseek-v3',
+            'deepseek-coder': 'deepseek-v3',
+            'deepseek-reasoner': 'deepseek-r1'
+        }.get(model_name, model_name)
+
     if debug:
         logger.setLevel(logging.DEBUG)
         for handler in logger.handlers:
@@ -325,7 +322,7 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, role: str, temp
     
     if localtest:
         return test_result()
-    
+
     chat(full_prompt, no_stream, model_name, temp, SYS_ROLES[sys_role_marker], client)
 
 def main() -> None:
