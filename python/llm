@@ -195,7 +195,7 @@ def process_unstreamed_chunk(response, response_time: float, extra_session_type:
 
 def sigint_handler(sig: int, frame: Any) -> None:
     """Handle SIGINT signal gracefully."""
-    print('\nSIGINT received. Exiting...')
+    print(f'\n{TIPF}SIGINT received. Exiting...{RSTF}')
     sys.exit(0)
 
 def ensure_url_parser_ok() -> None:
