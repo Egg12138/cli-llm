@@ -1,4 +1,15 @@
+# cli-llm 1.0
+
+1. custom model
+2. more flexible prompt selector
+3. single file in Rust
+4. plugin support
+5. local prompt manager
+6. single image input
+
 # TODO
+
+
 
 ## FATAL: 三种models manager混用了，要选择一个最好的方式保留
 

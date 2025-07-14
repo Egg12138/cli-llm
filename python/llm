@@ -262,8 +262,7 @@ def test_result():
 @click.argument('prompt', required=False, default=None)
 @click.option('-p', '--prompt', help=HELP_TEXTS['prompt'])
 @click.option('-n', '--no-stream', is_flag=True, help=HELP_TEXTS['no_stream'])
-@click.option('-m', '--model', type=click.Choice(['coder', 'chat', 'creative', 'coder-R', 'chat-R', 'creative-R'], case_sensitive=False), 
-              default='coder', help=HELP_TEXTS['model'])
+@click.option('-m', '--model', help=HELP_TEXTS['model'], default='coder')
 @click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
 @click.option('-d', '--debug', is_flag=True, 
               help=HELP_TEXTS['debug'], default=False)
@@ -287,7 +286,7 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: O
     
     # Map model selection to actual model names and parameters
     if model == 'coder':
-        model_name, temp = 'deepseek-coder', 0.0
+        model_name, temp = 'deepseek-chat', 0.0
         sys_role_marker = 'deepseek-coder'
     elif model == 'coder-R':
         model_name, temp = 'deepseek-reasoner', 0.0
@@ -305,7 +304,8 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: O
         model_name, temp = 'deepseek-reasoner', 1.5
         sys_role_marker = 'deepseek-chat'
     else:
-        raise ValueError(f"Unsupported model: {model}")
+        model_name, temp = model, 0.0
+        sys_role_marker = 'deepseek-coder'
 
     # Handle Tencent-specific model mappings
     if 'tencent' in API_ENDPOINT.lower():
