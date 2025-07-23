@@ -23,7 +23,7 @@ from prompts import SYS_ROLES
 # ============================================================================
 
 API_KEY = os.getenv("OPENAI_API_KEY")
-API_ENDPOINT = os.getenv("OPENAI_API_ENDPOINT")
+API_ENDPOINT = os.getenv("OPENAI_BASE_URL")
 
 class ModelType(Enum):
     """Supported model types and their configurations."""

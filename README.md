@@ -110,7 +110,7 @@ Set your API credentials as environment variables:
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
-export OPENAI_API_ENDPOINT="your-api-endpoint"
+export OPENAI_BASE_URL="your-api-endpoint"
 ```
 
 ## Development

@@ -32,7 +32,7 @@ impl ModelType {
 pub fn get_api_config() -> Result<ApiConfig> {
     Ok(ApiConfig {
         api_key: env::var("OPENAI_API_KEY")?,
-        api_endpoint: env::var("OPENAI_API_ENDPOINT")?,
+        api_endpoint: env::var("OPENAI_BASE_URL")?,
     })
 }
 
