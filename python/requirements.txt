@@ -3,4 +3,5 @@ openai>=1.0.0
 pytest>=7.0.0
 black>=22.0.0
 flake8>=4.0.0
-mypy>=0.900 
+mypy>=0.900
+tiktoken>=0.5.0 

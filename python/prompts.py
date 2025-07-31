@@ -1,6 +1,6 @@
 """System role prompts for different LLM models."""
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict 
 
 @dataclass
 class SystemPrompt:
@@ -8,9 +8,7 @@ class SystemPrompt:
     content: str
     description: str
     temperature: float = 1.0
-    model_name: Optional[str] = None
 
-# Core prompts
 CODER_PROMPT = SystemPrompt(
     content='''
     {
@@ -49,7 +47,6 @@ CODER_PROMPT = SystemPrompt(
     ''',
     description="Detailed programming assistant prompt with specific command handling",
     temperature=0.0,
-    model_name="deepseek-coder"
 )
 
 CHAT_PROMPT = SystemPrompt(
@@ -60,7 +57,6 @@ CHAT_PROMPT = SystemPrompt(
     ''',
     description="General purpose chat assistant with detailed explanations",
     temperature=1.3,
-    model_name="deepseek-chat"
 )
 
 CREATIVE_PROMPT = SystemPrompt(
@@ -69,21 +65,12 @@ CREATIVE_PROMPT = SystemPrompt(
     ''',
     description="Creative AI assistant for imaginative tasks",
     temperature=1.5,
-    model_name="deepseek-chat"
 )
 
-# Model-specific prompt mappings
-SYS_ROLES: Dict[str, str] = {
-    'deepseek-coder': CODER_PROMPT.content,
-    'deepseek-v3': CODER_PROMPT.content,
-    'deepseek-chat': CHAT_PROMPT.content,
-    'deepseek-creative': CREATIVE_PROMPT.content
+SYS_ROLES: Dict[str, SystemPrompt] = {
+    'coder': CODER_PROMPT,
+    'chat': CHAT_PROMPT,
+    'creative': CREATIVE_PROMPT
 }
 
-# Temperature settings for each model
-MODEL_TEMPERATURES: Dict[str, float] = {
-    'deepseek-coder': CODER_PROMPT.temperature,
-    'deepseek-v3': CODER_PROMPT.temperature,
-    'deepseek-chat': CHAT_PROMPT.temperature,
-    'deepseek-creative': CREATIVE_PROMPT.temperature
-} 
+ 

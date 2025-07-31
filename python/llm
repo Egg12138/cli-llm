@@ -17,6 +17,7 @@ from enum import Enum
 from dataclasses import dataclass
 import prompts
 from prompts import SYS_ROLES
+import tiktoken
 
 # ============================================================================
 # Module: Configuration
@@ -24,6 +25,7 @@ from prompts import SYS_ROLES
 
 API_KEY = os.getenv("OPENAI_API_KEY")
 API_ENDPOINT = os.getenv("OPENAI_BASE_URL")
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL")
 
 class ModelType(Enum):
     """Supported model types and their configurations."""
@@ -65,12 +67,88 @@ RSTF = f'{COLORS.RESET}'
 
 HELP_TEXTS = {
     'prompt': f'{TIPF}Input prompt for deepseek.{RSTF}',
-    'no_stream': f'{TIPF}Disable streaming of the response.(faster but need to wait until all results are generated){RSTF}, {ERRF}model-R does not support stream!{RSTF}',
-    'model': f'{TIPF}Choose the model to use. Default is coder. The deepseek-coder is not recommended in CLI{RSTF}, Now DeepSeek-R1 Reasoner is available, append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
+    'no_stream': f'{TIPF}Disable streaming of the response.(faster but need to wait until all results are generated){RSTF}, {ERRF}<role>-R does not support stream!{RSTF}',
+    'model': f'{TIPF}Choose the model to use. Default is $OPENAI_MODEL.{RSTF}',
     'output_codes': f'{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})',
     'debug': f'{TIPF}Enable debug mode to show detailed logs.{RSTF}',
     'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
+    'role': f'{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
+    'count_tokens': f'{TIPF}Enable token counting and show usage statistics.{RSTF}',
 }
+
+# ============================================================================
+# Module: Token Calculation
+# ============================================================================
+
+# Global token counters
+input_tokens = 0
+output_tokens = 0
+
+def get_encoding_for_model(model: str) -> tiktoken.Encoding:
+    """Get the appropriate encoding for a given model."""
+    # Map models to their encoding types
+    model_encoding_map = {
+        'deepseek-coder': 'cl100k_base',
+        'deepseek-chat': 'cl100k_base', 
+        'deepseek-reasoner': 'cl100k_base',
+        'gpt-4': 'cl100k_base',
+        'gpt-3.5-turbo': 'cl100k_base',
+        'gpt-4o': 'cl100k_base',
+        'gpt-4o-mini': 'cl100k_base',
+    }
+    
+    # Default to cl100k_base for most modern models
+    encoding_name = model_encoding_map.get(model, 'cl100k_base')
+    
+    try:
+        return tiktoken.get_encoding(encoding_name)
+    except KeyError:
+        # Fallback to cl100k_base if encoding not found
+        return tiktoken.get_encoding('cl100k_base')
+
+def count_tokens_in_messages(messages: list, model: str) -> int:
+    """Count tokens in a list of messages."""
+    encoding = get_encoding_for_model(model)
+    total_tokens = 0
+    
+    for message in messages:
+        # Count tokens in content
+        if message.get('content'):
+            total_tokens += len(encoding.encode(message['content']))
+        
+        # Add tokens for role formatting (typically 4 tokens per message)
+        total_tokens += 4
+        
+        # Add tokens for name if present
+        if message.get('name'):
+            total_tokens += 1
+    
+    # Add tokens for assistant reply formatting
+    total_tokens += 2
+    
+    return total_tokens
+
+def count_tokens_in_text(text: str, model: str) -> int:
+    """Count tokens in a single text string."""
+    encoding = get_encoding_for_model(model)
+    return len(encoding.encode(text))
+
+def display_token_usage() -> None:
+    """Display current token usage statistics."""
+    total_tokens = input_tokens + output_tokens
+    if total_tokens > 0:
+        print(f"\n{TIPF}📊 Token Usage:{RSTF}")
+        print(f"  Input tokens: {input_tokens:,}")
+        print(f"  Output tokens: {output_tokens:,}")
+        print(f"  Total tokens: {total_tokens:,}")
+        
+        # Estimate cost (rough approximation - actual costs vary by model)
+        estimated_cost = (input_tokens * 0.00001) + (output_tokens * 0.00003)
+        print(f"  Estimated cost: ~${estimated_cost:.4f}")
+    else:
+        print(f"\n{TIPF}📊 No tokens counted yet. Use --count-tokens to enable token counting.{RSTF}")
+
+
 
 # ============================================================================
 # Module: Logging
@@ -79,25 +157,22 @@ HELP_TEXTS = {
 def setup_logging(log_file: str = "/var/log/cli_llm.log", 
                   max_bytes: int = 1024*1024,
                   backup_count: int = 5) -> None:
-    """Configure logging to file and console with rotation."""
     log_dir = os.path.dirname(log_file)
     path = Path(log_file)
     try:
         path.touch(exist_ok=True)
     except PermissionError:
-        # Fallback to user directory if permission denied in system paths
         log_dir = os.path.expanduser('~/.cli_llm/logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'cli_llm.log')
 
-    # Create rotating file handler
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=max_bytes,
         backupCount=backup_count
     )
     
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('[%(levelname)s] - %(message)s')
     file_handler.setFormatter(formatter)
     
     logger = logging.getLogger()
@@ -127,7 +202,6 @@ def highlight_code_blocks(content: str, session_type: str = 'Context') -> str:
         flags=re.DOTALL
     )
     
-    # Then handle code blocks with `TEXT` format
     def replacer(matcher):
         return f'{CODEF}{matcher.group(0)}{RSTF}'
     
@@ -145,12 +219,18 @@ def sanitize_input(input_str: str) -> str:
 # Module: Response Processing
 # ============================================================================
 
-def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -> None:
+def process_streamed_chunk(response, count_tokens: bool = False, extra_session_type: Optional[str] = None) -> None:
     """Process and display streamed response chunks."""
+    global output_tokens
+    
     in_code_block = False
+    full_response_content = ""
+    
     for chunk in response:
         content = chunk.choices[0].delta.content if chunk.choices else None
         if content:
+            if count_tokens:
+                full_response_content += content
             content = re.sub(
                 r'\*\*(.*?)\*\*',
                 lambda m: f'{COLORS.BOLD}{COLORS.BLUE}{m.group(1)}{COLORS.RESET}',
@@ -168,9 +248,19 @@ def process_streamed_chunk(response, extra_session_type: Optional[str] = None) -
                 print(f'{CODEF}{content}', end='')
             else:
                 print(f'{RSTF}{content}', end='')
+    
+    # Calculate output tokens from the full response content only if token counting is enabled
+    if count_tokens and full_response_content:
+        # Get model name from the first chunk
+        model_name = response.model if hasattr(response, 'model') else 'deepseek-chat'
+        output_token_count = count_tokens_in_text(full_response_content, model_name)
+        output_tokens += output_token_count
+        logger.info(f"📊 Streamed output tokens: {output_token_count}")
 
-def process_unstreamed_chunk(response, response_time: float, extra_session_type: Optional[str] = None) -> None:
+def process_unstreamed_chunk(response, response_time: float, count_tokens: bool = False, extra_session_type: Optional[str] = None) -> None:
     """Process and display non-streamed response."""
+    global output_tokens
+    
     choice = response.choices[0]
     modelname = response.model
     finish_reason = choice.finish_reason
@@ -188,6 +278,19 @@ def process_unstreamed_chunk(response, response_time: float, extra_session_type:
     answer = highlight_code_blocks(choice.message.content)
     print(answer)
     print(f"{TIPF}@ {modelname} [{status}] Response time: {response_time:.2f}s:{RSTF}")
+    
+    # Calculate output tokens from response only if token counting is enabled
+    if count_tokens:
+        if hasattr(response, 'usage') and response.usage:
+            output_token_count = response.usage.completion_tokens
+            output_tokens += output_token_count
+            logger.info(f"📊 Output tokens: {output_token_count}")
+        else:
+            # Fallback: estimate output tokens from response content
+            response_content = choice.message.content
+            output_token_count = count_tokens_in_text(response_content, modelname)
+            output_tokens += output_token_count
+            logger.info(f"📊 Estimated output tokens: {output_token_count}")
 
 # ============================================================================
 # Module: Signal Handling
@@ -196,6 +299,9 @@ def process_unstreamed_chunk(response, response_time: float, extra_session_type:
 def sigint_handler(sig: int, frame: Any) -> None:
     """Handle SIGINT signal gracefully."""
     print(f'\n{TIPF}SIGINT received. Exiting...{RSTF}')
+    # Only show token usage if we have any tokens counted
+    if input_tokens > 0 or output_tokens > 0:
+        display_token_usage()
     sys.exit(0)
 
 def ensure_url_parser_ok() -> None:
@@ -208,45 +314,55 @@ def ensure_url_parser_ok() -> None:
 # Module: Core Chat Functionality
 # ============================================================================
 
-def chat(prompt: str, no_stream: bool, model: str, temp: float, sys_role: str, client: Any) -> None:
-    """Send a chat request to the LLM API and handle the response."""
+def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPrompt, client: Any, count_tokens: bool = False) -> None:
+    global input_tokens, output_tokens
+    
+    role = sys_role.content
+    temp = sys_role.temperature
     msg = [
-        {"role": "system", "content": sys_role},
+        {"role": "system", "content": role},
         {"role": "user", "content": prompt},
     ]
+    
+    # Calculate input tokens only if token counting is enabled
+    input_token_count = 0
+    if count_tokens:
+        input_token_count = count_tokens_in_messages(msg, model)
+        input_tokens += input_token_count
+    
     start_time = time.time()
     try:
+        logger.info(f"🚀 Request to {model} ({'streaming output' if not no_stream else '⏺️ non-streaming'})")
+        if count_tokens:
+            logger.info(f"📊 Input tokens: {input_token_count}")
+        print(f'{TIPF} 💭Generating...{RSTF}')
+        
         if not no_stream:
-            logger.info(f"Sending streaming request to model: {model}")
-            print(f'{TIPF}Sending...{RSTF}')
             response = client.chat.completions.create(
                 model=model,
                 messages=msg,
                 temperature=temp,
                 stream=True,
             )
-            process_streamed_chunk(response)
-            response_time = time.time() - start_time
-            logger.info(f"Streaming response processed in {response_time:.2f}s")
-            print(f"\n{TIPF}Response time: {response_time:.2f}s{RSTF}")     
-
+            process_streamed_chunk(response, count_tokens)
         else:
-            logger.info(f"Sending non-streaming request to model: {model}")
-            print(f'{TIPF}Sending...{RSTF}')
             response = client.chat.completions.create(
                 model=model,
                 messages=msg,
                 temperature=temp,
             )
-            response_time = time.time() - start_time
-            logger.info(f"Non-streaming response processed in {response_time:.2f}s")
-            process_unstreamed_chunk(response, response_time, 'Reasoning')
+            process_unstreamed_chunk(response, time.time() - start_time, 'Reasoning', count_tokens)
+        
+        response_time = time.time() - start_time
+        
+        logger.info(f"✅ Response completed in {response_time:.2f}s")
+        print(f"\n{TIPF}⏱️ Response time: {response_time:.2f}s{RSTF}")
 
     except openai.APIError as e:
-        logger.error(f"OpenAI API Error: {e}", exc_info=True)
+        logger.error(f"⚠️ OpenAI API Error: {e}", exc_info=True)
         error_status_code = int(e.message.split('-')[0].strip()[-3:])
         error_type = e.type
-        print(f"{error_type=}, {error_status_code=}")
+        print(f"{ERRF}❌ Error type: {error_type} (Code: {error_status_code}){RSTF}")
 
 # ============================================================================
 # Module: CLI Interface
@@ -258,21 +374,33 @@ def test_result():
     print(f"{prompts.CODER_PROMPT=}")
     print("test something")
 
+def get_sys_role(role: str) -> prompts.SystemPrompt:
+
+    sys_role_marker = role.split('-')[0] if role in SYS_ROLES.keys() else 'coder'
+    
+    return SYS_ROLES[sys_role_marker]
+
 @click.command()
 @click.argument('prompt', required=False, default=None)
-@click.option('-p', '--prompt', help=HELP_TEXTS['prompt'])
 @click.option('-n', '--no-stream', is_flag=True, help=HELP_TEXTS['no_stream'])
-@click.option('-m', '--model', help=HELP_TEXTS['model'], default='coder')
+@click.option('-r', '--role', default='coder', help=HELP_TEXTS['role'])
+@click.option('-m', '--model', help=HELP_TEXTS['model'])
 @click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
 @click.option('-d', '--debug', is_flag=True, 
               help=HELP_TEXTS['debug'], default=False)
 @click.option('-t', '--localtest', is_flag=True, 
               help=HELP_TEXTS['test'], default=False)
-def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: Optional[str], debug: bool, localtest: bool) -> None:
-    """Main CLI entry point for the LLM client."""
+@click.option('--count-tokens', is_flag=True, help=HELP_TEXTS['count_tokens'])
+def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role: Optional[str], output_codes: Optional[str], debug: bool, localtest: bool, count_tokens: bool) -> None:
+
+    
+    # handle missing options
     if prompt is None:
         prompt = input(f'{TIPF}[Ask]:{RSTF}')
     prompt = sanitize_input(prompt)
+
+    if model is None:
+        model = DEFAULT_MODEL
     
     if select.select([sys.stdin], [], [], 0.0)[0]:
         stdin_input = sys.stdin.read().strip()
@@ -284,37 +412,8 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: O
     
     client = openai.OpenAI(api_key=API_KEY, base_url=API_ENDPOINT)
     
-    # Map model selection to actual model names and parameters
-    if model == 'coder':
-        model_name, temp = 'deepseek-chat', 0.0
-        sys_role_marker = 'deepseek-coder'
-    elif model == 'coder-R':
-        model_name, temp = 'deepseek-reasoner', 0.0
-        sys_role_marker = 'deepseek-coder'
-    elif model == 'chat':
-        model_name, temp = 'deepseek-chat', 1.3
-        sys_role_marker = 'deepseek-chat'
-    elif model == 'chat-R': 
-        model_name, temp = 'deepseek-reasoner', 1.3
-        sys_role_marker = 'deepseek-chat'
-    elif model == 'creative':
-        model_name, temp = 'deepseek-chat', 1.5
-        sys_role_marker = 'deepseek-chat'
-    elif model == 'creative-R':
-        model_name, temp = 'deepseek-reasoner', 1.5
-        sys_role_marker = 'deepseek-chat'
-    else:
-        model_name, temp = model, 0.0
-        sys_role_marker = 'deepseek-coder'
-
-    # Handle Tencent-specific model mappings
-    if 'tencent' in API_ENDPOINT.lower():
-        model_name = {
-            'deepseek-chat': 'deepseek-v3',
-            'deepseek-coder': 'deepseek-v3',
-            'deepseek-reasoner': 'deepseek-r1'
-        }.get(model_name, model_name)
-
+    sys_role = get_sys_role(role)
+    
     if debug:
         logger.setLevel(logging.DEBUG)
         for handler in logger.handlers:
@@ -323,15 +422,20 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: str, output_codes: O
     if localtest:
         return test_result()
 
-    chat(full_prompt, no_stream, model_name, temp, SYS_ROLES[sys_role_marker], client)
+    chat(full_prompt, no_stream, model, sys_role, client, count_tokens)
 
 def main() -> None:
-    """Main entry point for the application."""
     try:
         chat_cli()
+        # Show token usage if we have any tokens counted
+        if input_tokens > 0 or output_tokens > 0:
+            display_token_usage()
     except Exception as e:
         logger.error(f"Application error: {e}", exc_info=True)
         print(f"{ERRF}fatal: {str(e)}{RSTF}")
+        # Show token usage if we have any tokens counted
+        if input_tokens > 0 or output_tokens > 0:
+            display_token_usage()
         sys.exit(1)
 
 if __name__ == '__main__':
