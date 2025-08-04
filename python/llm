@@ -335,7 +335,6 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
         logger.info(f"🚀 Request to {model} ({'streaming output' if not no_stream else '⏺️ non-streaming'})")
         if count_tokens:
             logger.info(f"📊 Input tokens: {input_token_count}")
-        print(f'{TIPF} 💭Generating...{RSTF}')
         
         if not no_stream:
             response = client.chat.completions.create(
@@ -344,6 +343,7 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
                 temperature=temp,
                 stream=True,
             )
+            print(f'{TIPF} 💭Generating...{RSTF}')
             process_streamed_chunk(response, count_tokens)
         else:
             response = client.chat.completions.create(
