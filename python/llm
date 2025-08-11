@@ -26,6 +26,7 @@ import tiktoken
 API_KEY = os.getenv("OPENAI_API_KEY")
 API_ENDPOINT = os.getenv("OPENAI_BASE_URL")
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL")
+print(API_ENDPOINT)
 
 class ModelType(Enum):
     """Supported model types and their configurations."""
@@ -74,6 +75,7 @@ HELP_TEXTS = {
     'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
     'role': f'{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
     'count_tokens': f'{TIPF}Enable token counting and show usage statistics.{RSTF}',
+    'temp': f'{TIPF}Customize temperature value for the model. If not provided, uses the default for the selected role.{RSTF}',
 }
 
 # ============================================================================
@@ -147,6 +149,12 @@ def display_token_usage() -> None:
         print(f"  Estimated cost: ~${estimated_cost:.4f}")
     else:
         print(f"\n{TIPF}📊 No tokens counted yet. Use --count-tokens to enable token counting.{RSTF}")
+
+def resolve_key(key: Optional[str]) -> str:
+    if key is None:
+        logger.warning(f"used empty key")
+        return "dummy-key"
+    return key
 
 
 
@@ -314,11 +322,12 @@ def ensure_url_parser_ok() -> None:
 # Module: Core Chat Functionality
 # ============================================================================
 
-def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPrompt, client: Any, count_tokens: bool = False) -> None:
+def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPrompt, client: Any, count_tokens: bool = False, custom_temp: Optional[float] = None) -> None:
     global input_tokens, output_tokens
     
     role = sys_role.content
-    temp = sys_role.temperature
+    # Use custom temperature if provided, otherwise use the default for the role
+    temp = custom_temp if custom_temp is not None else sys_role.temperature
     msg = [
         {"role": "system", "content": role},
         {"role": "user", "content": prompt},
@@ -389,13 +398,14 @@ def get_sys_role(role: str) -> prompts.SystemPrompt:
 @click.option('-n', '--no-stream', is_flag=True, help=HELP_TEXTS['no_stream'])
 @click.option('-r', '--role', default='coder', help=HELP_TEXTS['role'])
 @click.option('-m', '--model', help=HELP_TEXTS['model'])
+@click.option('-t', '--temp', type=float, help=HELP_TEXTS['temp'])
 @click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
 @click.option('-d', '--debug', is_flag=True, 
               help=HELP_TEXTS['debug'], default=False)
-@click.option('-t', '--localtest', is_flag=True, 
+@click.option('--localtest', is_flag=True, 
               help=HELP_TEXTS['test'], default=False)
 @click.option('--count-tokens', is_flag=True, help=HELP_TEXTS['count_tokens'])
-def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role: Optional[str], output_codes: Optional[str], debug: bool, localtest: bool, count_tokens: bool) -> None:
+def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role: Optional[str], temp: Optional[float], output_codes: Optional[str], debug: bool, localtest: bool, count_tokens: bool) -> None:
 
     
     # handle missing options
@@ -414,7 +424,9 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role:
     full_prompt = '\n'.join([prompt, stdin_input])
     ensure_url_parser_ok()
     
-    client = openai.OpenAI(api_key=API_KEY, base_url=API_ENDPOINT)
+    # Handle empty API key - some local LLM servers don't require it
+    api_key = resolve_key(API_KEY)
+    client = openai.OpenAI(api_key=api_key, base_url=API_ENDPOINT)
     
     sys_role = get_sys_role(role)
     
@@ -426,7 +438,7 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role:
     if localtest:
         return test_result()
 
-    chat(full_prompt, no_stream, model, sys_role, client, count_tokens)
+    chat(full_prompt, no_stream, model, sys_role, client, count_tokens, temp)
 
 def main() -> None:
     try:
