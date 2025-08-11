@@ -425,7 +425,6 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role:
     
     # Handle empty API key - some local LLM servers don't require it
     api_key = resolve_key(API_KEY)
-    print(API_KEY, api_key, API_ENDPOINT, sep="-->")
     client = openai.OpenAI(api_key=api_key, base_url=API_ENDPOINT)
     
     sys_role = get_sys_role(role)
