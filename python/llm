@@ -360,7 +360,11 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
 
     except openai.APIError as e:
         logger.error(f"⚠️ OpenAI API Error: {e}", exc_info=True)
-        error_status_code = int(e.message.split('-')[0].strip()[-3:])
+        try:
+            error_status_code = int(e.message.split('-')[0].strip()[-3:])
+        except ValueError as ve:
+            error_status_code = e.message  
+
         error_type = e.type
         print(f"{ERRF}❌ Error type: {error_type} (Code: {error_status_code}){RSTF}")
 
