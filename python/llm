@@ -72,7 +72,7 @@ HELP_TEXTS = {
     'output_codes': f'{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})',
     'debug': f'{TIPF}Enable debug mode to show detailed logs.{RSTF}',
     'test': f'{TIPF}Do some local tests, will expand custom test functions future.{RSTF}',
-    'role': f'{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`',
+    'role': f'{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`. {DESCF}smart: Simple and efficient AI assistant for general tasks{RSTF}',
     'count_tokens': f'{TIPF}Enable token counting and show usage statistics.{RSTF}',
     'temp': f'{TIPF}Customize temperature value for the model. If not provided, uses the default for the selected role.{RSTF}',
 }

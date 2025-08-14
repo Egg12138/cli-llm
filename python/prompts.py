@@ -1,6 +1,9 @@
 """System role prompts for different LLM models."""
+import json
+import os
 from dataclasses import dataclass
-from typing import Dict 
+from typing import Dict
+from pathlib import Path
 
 @dataclass
 class SystemPrompt:
@@ -9,9 +12,32 @@ class SystemPrompt:
     description: str
     temperature: float = 1.0
 
-CODER_PROMPT = SystemPrompt(
-    content='''
-    {
+def load_system_prompts() -> Dict[str, SystemPrompt]:
+    """Load system prompts from JSON file or use defaults if file not found."""
+    # Try to load from JSON file
+    prompts_file = Path(__file__).parent / "system_prompts.json"
+    
+    if prompts_file.exists():
+        try:
+            with open(prompts_file, 'r', encoding='utf-8') as f:
+                prompts_data = json.load(f)
+            
+            # Convert to SystemPrompt objects
+            sys_roles = {}
+            for role_name, role_data in prompts_data.items():
+                sys_roles[role_name] = SystemPrompt(
+                    content=role_data["content"],
+                    description=role_data["description"],
+                    temperature=role_data["temperature"]
+                )
+            return sys_roles
+        except (json.JSONDecodeError, KeyError, IOError) as e:
+            # If there's an error reading the file, fall back to defaults
+            pass
+    
+    # Default system prompts (fallback)
+    CODER_PROMPT = SystemPrompt(
+        content='''{
     "ROLE": "You are a helpful programmer assistant, well skilled in GNU/Linux development.",
     "Commands": [
              {
@@ -44,33 +70,39 @@ CODER_PROMPT = SystemPrompt(
     **** When you are explaining a concept, if it is an abbreviation, you need to point out what it stands for
     "
     }
-    ''',
-    description="Detailed programming assistant prompt with specific command handling",
-    temperature=0.0,
-)
+    }''',
+        description="Detailed programming assistant prompt with specific command handling",
+        temperature=0.0,
+    )
 
-CHAT_PROMPT = SystemPrompt(
-    content='''
-    You are a helpful assistant. You will answer my question in details instead of making a short summary. You have to explain the components and crucial concepts.
-    Your output should consist of the answer and reference. 
-    Each code block should be closed to 3 empty lines
-    ''',
-    description="General purpose chat assistant with detailed explanations",
-    temperature=1.3,
-)
+    CHAT_PROMPT = SystemPrompt(
+        content='''You are a helpful assistant. You will answer my question in details instead of making a short summary. You have to explain the components and crucial concepts.
+Your output should consist of the answer and reference. 
+Each code block should be closed to 3 empty lines''',
+        description="General purpose chat assistant with detailed explanations",
+        temperature=1.3,
+    )
 
-CREATIVE_PROMPT = SystemPrompt(
-    content='''
-    You are a creative AI. 
-    ''',
-    description="Creative AI assistant for imaginative tasks",
-    temperature=1.5,
-)
+    CREATIVE_PROMPT = SystemPrompt(
+        content='''You are a creative AI.''',
+        description="Creative AI assistant for imaginative tasks",
+        temperature=1.5,
+    )
 
-SYS_ROLES: Dict[str, SystemPrompt] = {
-    'coder': CODER_PROMPT,
-    'chat': CHAT_PROMPT,
-    'creative': CREATIVE_PROMPT
-}
+    SMART_PROMPT = SystemPrompt(
+        content="You are a smart AI assistant",
+        description="Simple and efficient AI assistant for general tasks",
+        temperature=0.6,
+    )
+
+    return {
+        'coder': CODER_PROMPT,
+        'chat': CHAT_PROMPT,
+        'creative': CREATIVE_PROMPT,
+        'smart': SMART_PROMPT,
+    }
+
+# Load system prompts
+SYS_ROLES: Dict[str, SystemPrompt] = load_system_prompts()
 
  
