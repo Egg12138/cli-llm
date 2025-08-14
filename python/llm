@@ -150,7 +150,7 @@ def display_token_usage() -> None:
         print(f"\n{TIPF}📊 No tokens counted yet. Use --count-tokens to enable token counting.{RSTF}")
 
 def resolve_key(key: Optional[str]) -> str:
-    if len(key) == 0:
+    if not key or len(key) == 0:
         logger.warning(f"used empty key")
         return "dummy-key"
     return key
@@ -409,7 +409,41 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role:
     
     # handle missing options
     if prompt is None:
-        prompt = input(f'{TIPF}[Ask]:{RSTF}')
+        # Check if there's piped input
+        if select.select([sys.stdin], [], [], 0.0)[0]:
+            stdin_input = sys.stdin.read().strip()
+            if stdin_input:
+                prompt = stdin_input
+            else:
+                # No piped input, enter interactive mode
+                from cli_llm.interactive import InteractiveSession
+                session = InteractiveSession()
+                # Set initial role if specified
+                if role and role.split('-')[0] in SYS_ROLES.keys():
+                    session.current_role = role.split('-')[0]
+                # Set model if specified
+                if model:
+                    session.model = model
+                # Set temperature if specified
+                if temp is not None:
+                    session.temperature = temp
+                session.run()
+                return
+        else:
+            # No piped input, enter interactive mode
+            from cli_llm.interactive import InteractiveSession
+            session = InteractiveSession()
+            # Set initial role if specified
+            if role and role.split('-')[0] in SYS_ROLES.keys():
+                session.current_role = role.split('-')[0]
+            # Set model if specified
+            if model:
+                session.model = model
+            # Set temperature if specified
+            if temp is not None:
+                session.temperature = temp
+            session.run()
+            return
     prompt = sanitize_input(prompt)
 
     if model is None:
@@ -420,7 +454,8 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role:
     else:
         stdin_input = ""
     
-    full_prompt = '\n'.join([prompt, stdin_input])
+    # Combine prompt and stdin input
+    full_prompt = '\n'.join([prompt, stdin_input]) if stdin_input else prompt
     ensure_url_parser_ok()
     
     # Handle empty API key - some local LLM servers don't require it
