@@ -26,6 +26,12 @@ import tiktoken
 API_KEY = os.getenv("OPENAI_API_KEY")
 API_ENDPOINT = os.getenv("OPENAI_BASE_URL")
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL")
+APP_TITLE = "egg-cli-llm"
+APP_URL = "https://github.com/Egg12138/cli-llm"
+EXTRA_HEADERS = {
+        "HTTP-Referer": APP_URL,
+        "X-Title": APP_TITLE,
+}
 
 class ModelType(Enum):
     """Supported model types and their configurations."""
@@ -349,6 +355,7 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
                 model=model,
                 messages=msg,
                 temperature=temp,
+                extra_headers=EXTRA_HEADERS,
                 stream=True,
             )
             print(f'{TIPF} 💭Generating...{RSTF}')
@@ -357,6 +364,7 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
             response = client.chat.completions.create(
                 model=model,
                 messages=msg,
+                extra_headers=EXTRA_HEADERS,
                 temperature=temp,
             )
             process_unstreamed_chunk(response, time.time() - start_time, 'Reasoning', count_tokens)
