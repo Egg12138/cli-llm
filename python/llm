@@ -81,6 +81,7 @@ HELP_TEXTS = {
     'role': f'{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`. {DESCF}smart: Simple and efficient AI assistant for general tasks{RSTF}',
     'count_tokens': f'{TIPF}Enable token counting and show usage statistics.{RSTF}',
     'temp': f'{TIPF}Customize temperature value for the model. If not provided, uses the default for the selected role.{RSTF}',
+    'json_output': f'{TIPF}Enable JSON output format. The model will respond with valid JSON.{RSTF}',
 }
 
 # ============================================================================
@@ -156,7 +157,7 @@ def display_token_usage() -> None:
         print(f"\n{TIPF}📊 No tokens counted yet. Use --count-tokens to enable token counting.{RSTF}")
 
 def resolve_key(key: Optional[str]) -> str:
-    if len(key) == 0:
+    if key is None or len(key) == 0:
         logger.warning(f"used empty key")
         return "dummy-key"
     return key
@@ -327,7 +328,7 @@ def ensure_url_parser_ok() -> None:
 # Module: Core Chat Functionality
 # ============================================================================
 
-def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPrompt, client: Any, count_tokens: bool = False, custom_temp: Optional[float] = None) -> None:
+def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPrompt, client: Any, count_tokens: bool = False, custom_temp: Optional[float] = None, json_output: bool = False) -> None:
     global input_tokens, output_tokens
     
     role = sys_role.content
@@ -351,23 +352,31 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
             logger.info(f"📊 Input tokens: {input_token_count}")
         
         if not no_stream:
-            response = client.chat.completions.create(
-                model=model,
-                messages=msg,
-                temperature=temp,
-                extra_headers=EXTRA_HEADERS,
-                stream=True,
-            )
+            create_params = {
+                'model': model,
+                'messages': msg,
+                'temperature': temp,
+                'extra_headers': EXTRA_HEADERS,
+                'stream': True,
+            }
+            if json_output:
+                create_params['response_format'] = {'type': 'json_object'}
+            
+            response = client.chat.completions.create(**create_params)
             print(f'{TIPF} 💭Generating...{RSTF}')
             process_streamed_chunk(response, count_tokens)
         else:
-            response = client.chat.completions.create(
-                model=model,
-                messages=msg,
-                extra_headers=EXTRA_HEADERS,
-                temperature=temp,
-            )
-            process_unstreamed_chunk(response, time.time() - start_time, 'Reasoning', count_tokens)
+            create_params = {
+                'model': model,
+                'messages': msg,
+                'extra_headers': EXTRA_HEADERS,
+                'temperature': temp,
+            }
+            if json_output:
+                create_params['response_format'] = {'type': 'json_object'}
+            
+            response = client.chat.completions.create(**create_params)
+            process_unstreamed_chunk(response, time.time() - start_time, count_tokens, 'Reasoning')
         
         response_time = time.time() - start_time
         
@@ -391,7 +400,7 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
 def test_result():
     """Run test functions."""
     print(f"{prompts.SystemPrompt=}")
-    print(f"{prompts.CODER_PROMPT=}")
+    print(f"{prompts.SYS_ROLES['coder']=}")
     print("test something")
 
 def get_sys_role(role: str) -> prompts.SystemPrompt:
@@ -406,13 +415,14 @@ def get_sys_role(role: str) -> prompts.SystemPrompt:
 @click.option('-r', '--role', default='coder', help=HELP_TEXTS['role'])
 @click.option('-m', '--model', help=HELP_TEXTS['model'])
 @click.option('-t', '--temp', type=float, help=HELP_TEXTS['temp'])
+@click.option('-j', '--json-output', is_flag=True, help=HELP_TEXTS['json_output'])
 @click.option('-o', '--output-codes', nargs=1, default=None, help=HELP_TEXTS['output_codes'])
 @click.option('-d', '--debug', is_flag=True, 
               help=HELP_TEXTS['debug'], default=False)
 @click.option('--localtest', is_flag=True, 
               help=HELP_TEXTS['test'], default=False)
 @click.option('--count-tokens', is_flag=True, help=HELP_TEXTS['count_tokens'])
-def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role: Optional[str], temp: Optional[float], output_codes: Optional[str], debug: bool, localtest: bool, count_tokens: bool) -> None:
+def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role: Optional[str], temp: Optional[float], json_output: bool, output_codes: Optional[str], debug: bool, localtest: bool, count_tokens: bool) -> None:
 
     
     # handle missing options
@@ -445,7 +455,7 @@ def chat_cli(prompt: Optional[str], no_stream: bool, model: Optional[str], role:
     if localtest:
         return test_result()
 
-    chat(full_prompt, no_stream, model, sys_role, client, count_tokens, temp)
+    chat(full_prompt, no_stream, model, sys_role, client, count_tokens, temp, json_output)
 
 def main() -> None:
     try:
