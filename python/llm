@@ -334,6 +334,13 @@ def chat(prompt: str, no_stream: bool, model: str, sys_role: prompts.SystemPromp
     role = sys_role.content
     # Use custom temperature if provided, otherwise use the default for the role
     temp = custom_temp if custom_temp is not None else sys_role.temperature
+    
+    # When JSON output is requested, ensure the prompt contains "json"
+    # This is required by OpenAI/DeepSeek API when using response_format={'type': 'json_object'}
+    # Without "json" in the prompt, the API returns a 400 error
+    if json_output and 'json' not in prompt.lower():
+        prompt = f"{prompt}\n\nPlease respond in JSON format."
+    
     msg = [
         {"role": "system", "content": role},
         {"role": "user", "content": prompt},
