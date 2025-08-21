@@ -33,26 +33,6 @@ EXTRA_HEADERS = {
         "X-Title": APP_TITLE,
 }
 
-class ModelType(Enum):
-    """Supported model types and their configurations."""
-    CODER = "coder"
-    CHAT = "chat"
-    CREATIVE = "creative"
-    CODER_REASONER = "coder-R"
-    CHAT_REASONER = "chat-R"
-    CREATIVE_REASONER = "creative-R"
-
-    @property
-    def config(self) -> Dict[str, Any]:
-        return {
-            ModelType.CODER: {'model_name': 'deepseek-coder', 'temp': 0.0},
-            ModelType.CHAT: {'model_name': 'deepseek-chat', 'temp': 1.3},
-            ModelType.CREATIVE: {'model_name': 'deepseek-chat', 'temp': 1.5},
-            ModelType.CODER_REASONER: {'model_name': 'deepseek-reasoner', 'temp': 0.0},
-            ModelType.CHAT_REASONER: {'model_name': 'deepseek-reasoner', 'temp': 1.3},
-            ModelType.CREATIVE_REASONER: {'model_name': 'deepseek-reasoner', 'temp': 1.5},
-        }[self]
-
 @dataclass
 class ColorCodes:
     """ANSI color codes for terminal output formatting."""
@@ -411,10 +391,12 @@ def test_result():
     print("test something")
 
 def get_sys_role(role: str) -> prompts.SystemPrompt:
-
-    sys_role_marker = role.split('-')[0] if role in SYS_ROLES.keys() else 'coder'
-    
-    return SYS_ROLES[sys_role_marker]
+    print(f"{role=}")
+    if role not in SYS_ROLES.keys():
+        logger.warning(f"role is not predefined, use {default_role} as default")
+        sys_role_marker = default_role
+        return SYS_ROLES[sys_role_marker]
+    return SYS_ROLES[role]
 
 @click.command()
 @click.argument('prompt', required=False, default=None)
@@ -478,5 +460,11 @@ def main() -> None:
             display_token_usage()
         sys.exit(1)
 
+def init():
+    global default_role
+    default_role = prompts.SystemPrompt.default_role()
+    print(SYS_ROLES)
+
 if __name__ == '__main__':
+    init()
     main()
