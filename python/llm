@@ -391,7 +391,6 @@ def test_result():
     print("test something")
 
 def get_sys_role(role: str) -> prompts.SystemPrompt:
-    print(f"{role=}")
     if role not in SYS_ROLES.keys():
         logger.warning(f"role is not predefined, use {default_role} as default")
         sys_role_marker = default_role
