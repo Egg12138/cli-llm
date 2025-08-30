@@ -462,7 +462,6 @@ def main() -> None:
 def init():
     global default_role
     default_role = prompts.SystemPrompt.default_role()
-    print(SYS_ROLES)
 
 if __name__ == '__main__':
     init()
