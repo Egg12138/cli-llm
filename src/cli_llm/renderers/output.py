@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ..config import CODEF, RSTF, COLORS, TIPF
+from ..config import CODEF, RSTF, CLRS, TIPF
 from ..config import AppConfig
 
 
@@ -15,7 +15,7 @@ def highlight_code_blocks(content: str, session_type: str = "Context") -> str:
 
     content = re.sub(
         r"\*\*(.*?)\*\*",
-        lambda m: f"{COLORS.bold}{COLORS.blue}{m.group(1)}{COLORS.reset}",
+        lambda m: f"{CLRS.bold}{CLRS.blue}{m.group(1)}{CLRS.reset}",
         content,
         flags=re.DOTALL,
     )
@@ -48,7 +48,7 @@ class ResponseRenderer:
 
             content = re.sub(
                 r"\*\*(.*?)\*\*",
-                lambda m: f"{COLORS.bold}{COLORS.blue}{m.group(1)}{COLORS.reset}",
+                lambda m: f"{CLRS.bold}{CLRS.blue}{m.group(1)}{CLRS.reset}",
                 content,
             )
 

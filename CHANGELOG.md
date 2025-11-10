@@ -5,7 +5,10 @@ The format roughly follows [Keep a Changelog](https://keepachangelog.com/) and u
 Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
-_No entries yet._
+### Added
+- `providers` and `provider models` CLI subcommands to inspect merged provider metadata and model lists, plus accompanying tests and docs.
+### Fixed
+- Config loader now detects legacy `~/.cli_llm/config.toml` so existing installs no longer lose API keys when env vars are unset.
 
 ## [0.2.3] – Configuration Loader *(internal)*
 ### Added

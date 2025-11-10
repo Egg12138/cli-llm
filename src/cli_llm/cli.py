@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import select
 import sys
-from typing import Optional
+from typing import Any, Dict, Optional
 
-import click
+import click # type: ignore
 
+from .utils import colored, RSTF, NOTF, TIPF
 from ._version import __version__
-from .config import ConfigLoader, HELP_TEXTS, TIPF, RSTF, setup_logging
+from .config import AppConfig, ConfigLoader, HELP_TEXTS, setup_logging
 from .providers import OpenAIProvider
 from .renderers import ResponseRenderer
 from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_input
@@ -17,8 +19,13 @@ from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_
 CONFIG_LOADER = ConfigLoader()
 
 
-@click.command()
+@click.group()
 @click.version_option(version=__version__, prog_name="cli-llm")
+def cli() -> None:
+    """cli-llm multi-command entrypoint."""
+
+
+@cli.command(name="chat")
 @click.argument("prompt", required=False, default=None)
 @click.option("-n", "--no-stream", is_flag=True, help=HELP_TEXTS["no_stream"])
 @click.option("-p", "--provider", help=HELP_TEXTS.get("provider", "Select the provider profile."))
@@ -30,12 +37,12 @@ CONFIG_LOADER = ConfigLoader()
 @click.option("-d", "--debug", is_flag=True, help=HELP_TEXTS["debug"], default=False)
 @click.option("--localtest", is_flag=True, help=HELP_TEXTS["test"], default=False)
 @click.option("--count-tokens", is_flag=True, help=HELP_TEXTS["count_tokens"])
-def chat_cli(
+def chat_command(
     prompt: Optional[str],
     no_stream: bool,
     provider: Optional[str],
     model: Optional[str],
-    role: str,
+    role: Optional[str],
     temp: Optional[float],
     json_output: bool,
     output_codes: Optional[str],
@@ -44,6 +51,105 @@ def chat_cli(
     count_tokens: bool,
 ) -> None:
     app_config = CONFIG_LOADER.load(cli_overrides={"default_model": model, "provider": provider})
+    _run_chat(
+        app_config=app_config,
+        prompt=prompt,
+        no_stream=no_stream,
+        role=role,
+        temp=temp,
+        json_output=json_output,
+        output_codes=output_codes,
+        debug=debug,
+        localtest=localtest,
+        count_tokens=count_tokens,
+    )
+
+
+@cli.command("inspect")
+@click.option("--json", "json_mode", is_flag=True, help="Print provider data as JSON.")
+@click.option("--all", "all_fields", is_flag=True, default=False, help="Print all fields of provder(incuding keys).")
+def providers_cmd(json_mode: bool, all_fields: bool) -> None:
+    """List provider profiles discovered from config/env defaults."""
+
+    app_config = CONFIG_LOADER.load()
+    records = _provider_records(app_config)
+
+    if json_mode:
+        print(json.dumps(records, indent=2, sort_keys=True))
+        return
+    
+    if all_fields:
+        print("Displaying all fields for each provider.")
+
+    active = app_config.provider
+    lines = [f"Active provider: {active}"]
+    for name in sorted(records.keys()):
+        record = records[name]
+        src = record.get('source')
+        models = ", ".join(record.get("models", [])) or "-"
+        has_key = "yes" if record.get("has_api_key") else "no"
+        lines.extend(
+            [
+                colored(f"- {name} ", TIPF)
+                + colored(f"({src})", NOTF if src == 'active' else TIPF),
+                f"  api_endpoint: {record.get('api_endpoint', '-')}",
+                f"  default_model: {record.get('default_model', '-')}",
+            ]
+        )
+
+        lines.extend([f"  models: {models}",] if all_fields else [])
+        lines.extend([f"  api_key_configured: {has_key}",] if all_fields else [])
+        
+        
+    print("\n".join(lines))
+
+
+@cli.group()
+def provider() -> None:
+    """Inspect metadata for current provider."""
+
+
+@provider.command("models")
+@click.argument("provider_name", required=False)
+@click.option("--json", "json_mode", is_flag=True, help="Print only the model list as JSON.")
+def provider_models(provider_name: Optional[str], json_mode: bool) -> None:
+    """Show the models declared for a provider profile."""
+
+    app_config = CONFIG_LOADER.load()
+    target = provider_name or app_config.provider
+    records = _provider_records(app_config)
+    record = records.get(target)
+    if record is None:
+        raise click.UsageError(f"Provider '{target}' is not available.")
+
+    models = record.get("models") or ([record["default_model"]] if record.get("default_model") else [])
+
+    if json_mode:
+        print(json.dumps({"provider": target, "models": models}, indent=2))
+        return
+
+    if not models:
+        print(f"No models declared for provider '{target}'.")
+        return
+
+    print(f"Models for '{target}':")
+    for name in models:
+        print(f"- {name}")
+
+
+def _run_chat(
+    *,
+    app_config: AppConfig,
+    prompt: Optional[str],
+    no_stream: bool,
+    role: Optional[str],
+    temp: Optional[float],
+    json_output: bool,
+    output_codes: Optional[str],
+    debug: bool,
+    localtest: bool,
+    count_tokens: bool,
+) -> None:
     logger = setup_logging()
 
     if prompt is None:
@@ -56,11 +162,6 @@ def chat_cli(
         stdin_input = ""
 
     ensure_url_parser_ok()
-
-    if app_config.provider != "openai":
-        raise click.UsageError(
-            f"Provider '{app_config.provider}' is not supported yet. Only 'openai' is available."
-        )
 
     active_model = app_config.default_model
     active_role = role or app_config.default_role
@@ -93,9 +194,45 @@ def chat_cli(
     chat_service.display_tokens_if_any()
 
 
+def _provider_records(app_config: AppConfig) -> Dict[str, Dict[str, Any]]:
+    records: Dict[str, Dict[str, Any]] = {}
+    for name, profile in app_config.providers.items():
+        record = {
+            "api_endpoint": profile.get("api_endpoint"),
+            "default_model": profile.get("default_model"),
+            "models": profile.get("models") or [],
+            "has_api_key": bool(profile.get("api_key")),
+            "source": "user-config",
+        }
+        records[name] = record
+
+    active = records.setdefault(app_config.provider, {})
+    active["api_endpoint"] = app_config.api_endpoint
+    active["default_model"] = app_config.default_model
+    active.setdefault("models", [])
+    active["has_api_key"] = bool(app_config.api_key or active.get("has_api_key"))
+    active["source"] = "active"
+    if app_config.default_model and app_config.default_model not in active["models"]:
+        active["models"].append(app_config.default_model)
+
+    return records
+
+
+SUBCOMMAND_NAMES = {"chat", "inspect", "provider"}
+PASSTHROUGH_FLAGS = {"-h", "--help", "-V", "--version"}
+
+
 def main() -> None:
+    args = sys.argv[1:]
+    if args and args[0] in PASSTHROUGH_FLAGS:
+        forwarded = args
+    elif not args or args[0] not in SUBCOMMAND_NAMES:
+        forwarded = ["chat", *args]
+    else:
+        forwarded = args
+
     try:
-        chat_cli()
+        cli.main(args=forwarded)
     except KeyboardInterrupt:
         print(f"\n{TIPF}Interrupted by user{RSTF}")
         sys.exit(130)

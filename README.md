@@ -87,6 +87,10 @@ models = ["deepseek-chat", "deepseek-coder"]
 
 Select a provider via config, `CLI_LLM_PROVIDER`, or the `--provider` flag. Only the `openai` provider is wired today, but other profiles can be declared for forward compatibility.
 
+### Provider discovery helpers
+- `llm providers` – show every loadable provider profile after merging defaults, config, and environment data.
+- `llm provider models [name]` – print the models declared for a profile (defaults to the active provider when omitted). Use `--json` on either command for machine-readable output.
+
 ## Repository Layout
 - `src/cli_llm/` – Python CLI package (modernised in 0.2.x).
 - `rust/` – Rust prototype (development resumes when the roadmap calls for it).

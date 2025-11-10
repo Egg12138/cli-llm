@@ -10,37 +10,13 @@ from typing import Any, Dict, Mapping, Optional
 
 from logging.handlers import RotatingFileHandler
 
+from .utils import CODEF, CLRS, DESCF, ERRF, RSTF, TIPF, colored
+
 try:  # pragma: no cover - fallback for Python < 3.11
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - fallback
     import tomli as tomllib  # type: ignore
 
-
-@dataclass(slots=True)
-class ColorCodes:
-    """ANSI color codes for terminal output formatting."""
-
-    red: str = "\033[91m"
-    bold: str = "\033[1m"
-    blue: str = "\033[94m"
-    magenta: str = "\033[35m"
-    reset: str = "\033[0m"
-    bg_yellow: str = "\033[43m"
-
-    def tip(self) -> str:
-        return f"{self.blue}{self.bold}"
-
-    def code(self) -> str:
-        return f"{self.magenta}{self.bold}"
-
-    def err(self) -> str:
-        return f"{self.red}{self.bold}"
-
-    def desc(self) -> str:
-        return self.bg_yellow
-
-
-COLORS = ColorCodes()
 
 DEFAULT_CONFIG_VALUES = {
     "api_endpoint": "https://api.openai.com/v1",
@@ -50,6 +26,7 @@ DEFAULT_CONFIG_VALUES = {
 }
 
 DEFAULT_CONFIG_PATH = Path.home() / ".cli-llm" / "config.toml"
+LEGACY_CONFIG_PATH = Path.home() / ".cli_llm" / "config.toml"
 
 
 @dataclass(slots=True)
@@ -92,16 +69,19 @@ class ConfigLoader:
 
     def __init__(
         self,
-        user_config_path: Path = DEFAULT_CONFIG_PATH,
+        user_config_path: Optional[Path] = None,
         repo_defaults: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        self.user_config_path = user_config_path
+        self._explicit_user_path = user_config_path is not None
+        self.user_config_path = user_config_path or DEFAULT_CONFIG_PATH
+        self._legacy_config_path = LEGACY_CONFIG_PATH
         self.repo_defaults = dict(DEFAULT_CONFIG_VALUES)
         if repo_defaults:
             self.repo_defaults.update({k: v for k, v in repo_defaults.items() if v is not None})
         self._cached_user_values: Dict[str, Any] = {}
         self._cached_provider_profiles: Dict[str, Dict[str, Any]] = {}
         self._cached_mtime: Optional[float] = None
+        self._cached_path: Optional[Path] = None
 
     def load(
         self,
@@ -148,12 +128,19 @@ class ConfigLoader:
         return resolved
 
     def _user_file_values(self) -> tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
-        path = self.user_config_path
-        if not path.exists():
+        path = self._resolve_user_config_path()
+        if path is None:
             self._cached_user_values = {}
             self._cached_provider_profiles = {}
             self._cached_mtime = None
+            self._cached_path = None
             return {}, {}
+
+        if path != self._cached_path:
+            self._cached_user_values = {}
+            self._cached_provider_profiles = {}
+            self._cached_mtime = None
+            self._cached_path = path
 
         mtime = path.stat().st_mtime
         if self._cached_mtime == mtime and self._cached_user_values:
@@ -166,6 +153,7 @@ class ConfigLoader:
             self._cached_user_values = {}
             self._cached_provider_profiles = {}
             self._cached_mtime = mtime
+            self._cached_path = path
             return {}, {}
 
         extracted = self._extract_supported_fields(data)
@@ -173,7 +161,17 @@ class ConfigLoader:
         self._cached_user_values = extracted
         self._cached_provider_profiles = provider_profiles
         self._cached_mtime = mtime
+        self._cached_path = path
         return extracted, provider_profiles
+
+    def _resolve_user_config_path(self) -> Optional[Path]:
+        candidates = [self.user_config_path]
+        if not self._explicit_user_path and self._legacy_config_path not in candidates:
+            candidates.append(self._legacy_config_path)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
 
     def _extract_supported_fields(self, data: Mapping[str, Any]) -> Dict[str, Any]:
         extracted: Dict[str, Any] = {}
@@ -217,17 +215,6 @@ class ConfigLoader:
             profiles[str(name)] = profile
         return profiles
 
-
-TIPF = COLORS.tip()
-CODEF = COLORS.code()
-ERRF = COLORS.err()
-DESCF = COLORS.desc()
-RSTF = COLORS.reset
-
-
-def colored(text: str, prefix: str) -> str:
-    """Wrap a string with the provided color prefix and reset sequence."""
-    return f"{prefix}{text}{RSTF}"
 
 HELP_TEXTS = {
     "prompt": colored("Input prompt for deepseek.", TIPF),
