@@ -8,6 +8,8 @@ Until then, entries describe internal milestones so the team can track progress.
 ### Added
 - Documented the internal-only status and roadmap snapshot in `README.md`.
 - Introduced this changelog to capture work in the 0.2.x cycle.
+### Changed
+- Refactored the CLI into modular components (`config`, `providers`, `renderers`, `services`) and shrank the `cli` entry to wiring only.
 
 ## [0.2.1] – Freeze Roadmap Messaging *(in progress, internal)*
 - Define messaging tasks for README/CHANGELOG to reflect the internal-only posture and roadmap.
