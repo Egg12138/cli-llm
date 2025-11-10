@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cli-llm"
+version = "0.2.1.dev0"
+description = "Internal CLI client for working with large language models"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Egg12138", email = "xoltraman@outlook.com" },
+]
+license = { text = "MIT" }
+keywords = ["llm", "cli", "openai", "developer-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "click>=8.1",
+  "openai>=1.0.0",
+  "tiktoken>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "black>=23.0.0",
+  "mypy>=1.0.0",
+  "ruff>=0.5.0",
+]
+
+[project.scripts]
+llm = "cli_llm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Egg12138/cli-llm"
+Issues = "https://github.com/Egg12138/cli-llm/issues"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cli_llm"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/cli_llm/system_prompts.json" = "cli_llm/system_prompts.json"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/cli_llm",
+  "README.md",
+  "CHANGELOG.md",
+  "AGENTS.md",
+]

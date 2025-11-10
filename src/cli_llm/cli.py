@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """Simple CLI LLM client in a single file"""
 
-import click
-import openai
-import time
+import logging
 import os
 import re
-import sys
 import select
 import signal
-from pathlib import Path
-from typing import Optional, Dict, Any
-import logging
-from logging.handlers import RotatingFileHandler
-import os
-from enum import Enum
+import sys
+import time
 from dataclasses import dataclass
-import prompts
-from prompts import SYS_ROLES
+from enum import Enum
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import click
+import openai
 import tiktoken
+
+from . import prompts
+from .prompts import SYS_ROLES
 
 # ============================================================================
 # Module: Configuration
@@ -62,7 +63,7 @@ HELP_TEXTS = {
     "output_codes": f"{TIPF}Output the code to the target file. Only one code block is supported({DESCF}IN PROGRESS{RSTF})",
     "debug": f"{TIPF}Enable debug mode to show detailed logs.{RSTF}",
     "test": f"{TIPF}Do some local tests, will expand custom test functions future.{RSTF}",
-    "role": f"{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`. {DESCF}smart: Simple and efficient AI assistant for general tasks{RSTF}",
+    "role": f"{TIPF}Choose the role to use. Default is coder. Append an `-R` to use the reasoner of current mode, e.g. `coder-R`, `chat-R`, `creative-R`. smart: Simple and efficient AI assistant for general tasks",
     "count_tokens": f"{TIPF}Enable token counting and show usage statistics.{RSTF}",
     "temp": f"{TIPF}Customize temperature value for the model. If not provided, uses the default for the selected role.{RSTF}",
     "json_output": f"{TIPF}Enable JSON output format. The model will respond with valid JSON.{RSTF}",
@@ -427,7 +428,6 @@ def chat(
 
 # ============================================================================
 # Module: CLI Interface
-# ============================================================================
 
 
 def test_result(client):
@@ -525,6 +525,5 @@ def init():
 
 
 if __name__ == "__main__":
-if __name__ == '__main__':
     init()
     main()
