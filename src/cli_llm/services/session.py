@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 import os
 import re
-import select
 import signal
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import tiktoken
 
@@ -151,7 +150,7 @@ class ChatService:
         LOGGER.info("🚀 Request to %s (%s)", model, "non-stream" if no_stream else "stream")
         client = self.provider.client()
 
-        create_params = {
+        create_params: Dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,

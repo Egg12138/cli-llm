@@ -59,8 +59,33 @@ The project currently targets team workflows only; no public release is schedule
    - Run unit tests via `pytest`.
 4. **Workflow**
    - Keep feature work scoped to the active roadmap milestone.
-   - Update `AGENTS.md` + `CHANGELOG.md` whenever behavior or plans change.
-   - Use feature branches for experiments; merge to `main` only after tests pass.
+- Update `AGENTS.md` + `CHANGELOG.md` whenever behavior or plans change.
+- Use feature branches for experiments; merge to `main` only after tests pass.
+
+## Configuration
+cli-llm resolves configuration in this order: CLI flags > environment variables > `~/.cli-llm/config.toml` > built-in defaults.  
+Environment overrides follow OpenAI-style naming (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`) plus `CLI_LLM_DEFAULT_ROLE` and `CLI_LLM_PROVIDER` for application-level settings.
+
+Example `~/.cli-llm/config.toml` with multiple providers:
+
+```toml
+[defaults]
+provider = "openai"
+model = "gpt-4o-mini"
+role = "coder"
+
+[providers.openai]
+api_key = "sk-openai"
+api_endpoint = "https://api.openai.com/v1"
+models = ["gpt-4o", "gpt-4o-mini"]
+
+[providers.deepseek]
+api_key = "sk-deepseek"
+api_endpoint = "https://api.deepseek.com/v1"
+models = ["deepseek-chat", "deepseek-coder"]
+```
+
+Select a provider via config, `CLI_LLM_PROVIDER`, or the `--provider` flag. Only the `openai` provider is wired today, but other profiles can be declared for forward compatibility.
 
 ## Repository Layout
 - `src/cli_llm/` – Python CLI package (modernised in 0.2.x).
@@ -73,3 +98,5 @@ The project currently targets team workflows only; no public release is schedule
 3. Treat every internal build as if it might be published tomorrow.
 
 Questions? Start with `AGENTS.md` for context, then open an issue or discussion in the repo. 
+
+Use `llm --version` to confirm the CLI build matches the `pyproject.toml` version.

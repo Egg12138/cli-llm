@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cli-llm"
-version = "0.2.1.dev0"
+version = "0.2.3.dev0"
 description = "Internal CLI client for working with large language models"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,6 +28,7 @@ dependencies = [
   "click>=8.1",
   "openai>=1.0.0",
   "tiktoken>=0.5.0",
+  "tomli>=2.0.1; python_version < \"3.11\"",
 ]
 
 [project.optional-dependencies]
@@ -61,3 +62,6 @@ include = [
   "CHANGELOG.md",
   "AGENTS.md",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

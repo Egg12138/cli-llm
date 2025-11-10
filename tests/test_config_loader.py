@@ -1,0 +1,88 @@
+"""Tests for the layered configuration loader."""
+
+from __future__ import annotations
+
+from cli_llm.config import ConfigLoader, DEFAULT_CONFIG_VALUES
+
+
+def test_defaults_used_when_no_sources(tmp_path) -> None:
+    loader = ConfigLoader(user_config_path=tmp_path / "missing.toml")
+    config = loader.load(environment={})
+
+    assert config.default_model == DEFAULT_CONFIG_VALUES["default_model"]
+    assert config.default_role == DEFAULT_CONFIG_VALUES["default_role"]
+
+
+def test_user_file_overrides_defaults(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[defaults]
+provider = "deepseek"
+model = "file-model"
+role = "creator"
+
+[providers.deepseek]
+api_endpoint = "https://file.example/v1"
+api_key = "file-key"
+models = ["file-model", "deepseek-chat"]
+""",
+        encoding="utf-8",
+    )
+
+    loader = ConfigLoader(user_config_path=config_path)
+    config = loader.load(environment={})
+
+    assert config.provider == "deepseek"
+    assert config.api_endpoint == "https://file.example/v1"
+    assert config.api_key == "file-key"
+    assert config.default_model == "file-model"
+    assert config.default_role == "creator"
+    assert config.providers["deepseek"]["models"] == ["file-model", "deepseek-chat"]
+
+
+def test_environment_overrides_file_and_defaults(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[defaults]
+provider = "deepseek"
+model = "file-model"
+
+[providers.deepseek]
+api_endpoint = "https://file.example/v1"
+""",
+        encoding="utf-8",
+    )
+
+    loader = ConfigLoader(user_config_path=config_path)
+    env = {
+        "OPENAI_MODEL": "env-model",
+        "OPENAI_BASE_URL": "https://env.example/v1",
+        "CLI_LLM_PROVIDER": "deepseek",
+    }
+    config = loader.load(environment=env)
+
+    assert config.default_model == "env-model"
+    assert config.api_endpoint == "https://env.example/v1"
+    assert config.provider == "deepseek"
+
+
+def test_cli_overrides_take_highest_priority(tmp_path) -> None:
+    loader = ConfigLoader(user_config_path=tmp_path / "missing.toml")
+    env = {"OPENAI_MODEL": "env-model", "CLI_LLM_PROVIDER": "deepseek"}
+    config = loader.load(
+        environment=env,
+        cli_overrides={"default_model": "cli-model", "provider": "openai"},
+    )
+
+    assert config.default_model == "cli-model"
+    assert config.provider == "openai"
+
+
+def test_provider_defaults_used_when_section_missing(tmp_path) -> None:
+    loader = ConfigLoader(user_config_path=tmp_path / "missing.toml")
+    config = loader.load(environment={}, cli_overrides={})
+
+    assert config.provider == DEFAULT_CONFIG_VALUES["provider"]
+    assert config.providers == {}

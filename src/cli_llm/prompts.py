@@ -1,6 +1,5 @@
 """System role prompts for different LLM models."""
 import json
-import os
 from dataclasses import dataclass
 from typing import Dict
 from pathlib import Path
@@ -35,7 +34,7 @@ def load_system_prompts() -> Dict[str, SystemPrompt]:
                     temperature=role_data["temperature"]
                 )
             return sys_roles
-        except (json.JSONDecodeError, KeyError, IOError) as e:
+        except (json.JSONDecodeError, KeyError, IOError):
             # If there's an error reading the file, fall back to defaults
             pass
     
@@ -43,7 +42,6 @@ def load_system_prompts() -> Dict[str, SystemPrompt]:
     return default_role_set()
 
 
-@staticmethod
 def default_role_set() -> Dict[str, SystemPrompt]:
     CODER_PROMPT = SystemPrompt(
             content='''{

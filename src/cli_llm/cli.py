@@ -8,16 +8,21 @@ from typing import Optional
 
 import click
 
-from .config import AppConfig, HELP_TEXTS, TIPF, RSTF, setup_logging
+from ._version import __version__
+from .config import ConfigLoader, HELP_TEXTS, TIPF, RSTF, setup_logging
 from .providers import OpenAIProvider
 from .renderers import ResponseRenderer
 from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_input
 
+CONFIG_LOADER = ConfigLoader()
+
 
 @click.command()
+@click.version_option(version=__version__, prog_name="cli-llm")
 @click.argument("prompt", required=False, default=None)
 @click.option("-n", "--no-stream", is_flag=True, help=HELP_TEXTS["no_stream"])
-@click.option("-r", "--role", default="coder", help=HELP_TEXTS["role"])
+@click.option("-p", "--provider", help=HELP_TEXTS.get("provider", "Select the provider profile."))
+@click.option("-r", "--role", help=HELP_TEXTS["role"])
 @click.option("-m", "--model", help=HELP_TEXTS["model"])
 @click.option("-t", "--temp", type=float, help=HELP_TEXTS["temp"])
 @click.option("-j", "--json-output", is_flag=True, help=HELP_TEXTS["json_output"])
@@ -28,6 +33,7 @@ from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_
 def chat_cli(
     prompt: Optional[str],
     no_stream: bool,
+    provider: Optional[str],
     model: Optional[str],
     role: str,
     temp: Optional[float],
@@ -37,7 +43,7 @@ def chat_cli(
     localtest: bool,
     count_tokens: bool,
 ) -> None:
-    app_config = AppConfig.from_env()
+    app_config = CONFIG_LOADER.load(cli_overrides={"default_model": model, "provider": provider})
     logger = setup_logging()
 
     if prompt is None:
@@ -51,13 +57,19 @@ def chat_cli(
 
     ensure_url_parser_ok()
 
-    active_model = model or app_config.default_model or "deepseek-chat"
+    if app_config.provider != "openai":
+        raise click.UsageError(
+            f"Provider '{app_config.provider}' is not supported yet. Only 'openai' is available."
+        )
+
+    active_model = app_config.default_model
+    active_role = role or app_config.default_role
     full_prompt = "\n".join(filter(None, [prompt, stdin_input]))
 
-    provider = OpenAIProvider(app_config)
+    provider_client = OpenAIProvider(app_config)
     renderer = ResponseRenderer(app_config)
     token_tracker = TokenTracker()
-    chat_service = ChatService(provider, renderer, token_tracker)
+    chat_service = ChatService(provider_client, renderer, token_tracker)
 
     if debug:
         logger.setLevel("DEBUG")
@@ -65,14 +77,14 @@ def chat_cli(
             handler.setLevel("DEBUG")
 
     if localtest:
-        print(f"Provider base URL: {provider.config.api_endpoint}")
+        print(f"Provider base URL: {provider_client.config.api_endpoint}")
         return
 
     chat_service.chat(
         full_prompt,
         no_stream=no_stream,
         model=active_model,
-        role_name=role,
+        role_name=active_role,
         count_tokens=count_tokens,
         custom_temp=temp,
         json_output=json_output,

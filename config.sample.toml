@@ -1,0 +1,24 @@
+# Sample configuration translated from llm_cfg.bash (api-* functions only)
+
+[defaults]
+provider = "gemini"
+model = "gemini-2.5-flash"
+role = "normal"
+
+[providers.deepseek]
+api_key = "sk-699568e28bf540b98f5bba3ae70f4a21"
+api_endpoint = "https://api.deepseek.com/v1"
+default_model = "deepseek-chat"
+models = ["deepseek-chat", "deepseek-reasoner"]
+
+[providers.local]
+api_key = ""
+api_endpoint = "http://198.18.0.1:1234/v1"
+default_model = "qwen-qwen3-4b-thinking"
+models = ["qwen3-coder-30b-a3b-instruct"]
+
+[providers.gemini]
+api_key = "AIzaSyCpXiKl568tUMvFqlcTZKuk_5htoTzvhhw"
+api_endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/"
+default_model = "gemini-2.5-flash"
+models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]

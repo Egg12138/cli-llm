@@ -5,9 +5,15 @@ The format roughly follows [Keep a Changelog](https://keepachangelog.com/) and u
 Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
+_No entries yet._
+
+## [0.2.3] – Configuration Loader *(internal)*
 ### Added
 - Documented the internal-only status and roadmap snapshot in `README.md`.
 - Introduced this changelog to capture work in the 0.2.x cycle.
+- Layered configuration loader with CLI/env/user-file/default precedence plus tests, including multi-provider support and a sample `config.toml`.
+- CLI `--version/-V` flag that reflects the pyproject version regardless of how the package was installed.
+- Regression tests for the version helper to ensure local installs stay in sync.
 ### Changed
 - Refactored the CLI into modular components (`config`, `providers`, `renderers`, `services`) and shrank the `cli` entry to wiring only.
 
