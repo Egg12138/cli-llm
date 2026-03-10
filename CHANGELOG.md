@@ -7,6 +7,10 @@ Until then, entries describe internal milestones so the team can track progress.
 ## [Unreleased]
 ### Added
 - `providers` and `provider models` CLI subcommands to inspect merged provider metadata and model lists, plus accompanying tests and docs.
+- One-click installer script at `scripts/install.sh` with interactive setup and non-interactive flags for `user` (default), `venv`, and `system` install modes.
+- Installer smoke test script `tests/test_installer_smoke.sh` covering user-mode install/reinstall/uninstall and venv-mode install/uninstall.
+### Changed
+- README installation docs now use `./scripts/install.sh` as the primary workflow with mode-specific examples and PATH troubleshooting guidance.
 ### Fixed
 - Config loader now detects legacy `~/.cli_llm/config.toml` so existing installs no longer lose API keys when env vars are unset.
 

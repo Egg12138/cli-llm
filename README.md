@@ -33,24 +33,48 @@ The project currently targets team workflows only; no public release is schedule
 - Build experimental features on dedicated branches with tests before merging to main.
 
 ## Installation Guide
-1. Ensure Python 3.9+ is available (use [`uv`](https://github.com/astral-sh/uv) or `pyenv` for isolation).
-2. Clone the repository and install in editable mode:
-   ```bash
-   uv pip install -e .
-   # or
-   python -m pip install -e .
-   ```
-3. Verify the CLI:
-   ```bash
-   llm --help        # installed entrypoint
-   python -m cli_llm # module form
-   ```
-4. Optional: install dev extras (`pip install -e .[dev]`) to get linting and testing tools.
+One-click installer (interactive):
+
+```bash
+./scripts/install.sh
+```
+
+The installer supports three targets:
+1. `user` (default): installs a managed venv and links `llm` to `~/.local/bin`.
+2. `venv`: installs directly into a uv virtual environment (default path: `<PWD>/.venv`).
+3. `system`: installs a managed venv under `/opt/cli-llm/venv` and links `llm` to `/usr/local/bin`.
+
+Non-interactive examples:
+
+```bash
+# Default method: user PATH (~/.local/bin)
+./scripts/install.sh --mode user --yes
+
+# Project/local venv scope
+./scripts/install.sh --mode venv --venv-path .venv --yes
+
+# System path (will use sudo if needed)
+./scripts/install.sh --mode system --yes
+```
+
+Uninstall examples:
+
+```bash
+./scripts/install.sh --mode user --uninstall --yes
+./scripts/install.sh --mode venv --venv-path .venv --uninstall --yes
+./scripts/install.sh --mode system --uninstall --yes
+```
+
+If `~/.local/bin` is not on your `PATH`, add this to your shell profile:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
 
 ## Development Guide
 1. **Environment**
    - Create a virtual environment (`uv venv` / `python -m venv .venv`) and activate it.
-   - Install with dev extras: `pip install -e .[dev]`.
+   - Install with dev extras: `uv pip install --python .venv/bin/python -e .[dev]` (or `pip install -e .[dev]`).
 2. **Coding Standards**
    - Format with `black src`.
    - Lint with `ruff check src`.
