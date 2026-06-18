@@ -15,6 +15,7 @@ from .config import AppConfig, ConfigLoader, HELP_TEXTS, setup_logging
 from .providers import ProviderRouter
 from .renderers import ResponseRenderer
 from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_input
+from .toolcalls import get_tool_definitions
 
 CONFIG_LOADER = ConfigLoader()
 
@@ -137,6 +138,31 @@ def provider_models(provider_name: Optional[str], json_mode: bool) -> None:
         print(f"- {name}")
 
 
+@cli.command("toolcall")
+@click.argument("prompt", required=False)
+@click.option("--tools", "tools_csv", help="Comma-separated preset tools to enable.")
+@click.option("--list-tools", is_flag=True, help="List enabled preset tools and exit.")
+def toolcall_command(prompt: Optional[str], tools_csv: Optional[str], list_tools: bool) -> None:
+    """Run a single tool-call-oriented request."""
+
+    tool_names = None
+    if tools_csv:
+        tool_names = [name.strip() for name in tools_csv.split(",") if name.strip()]
+    try:
+        tools = get_tool_definitions(tool_names)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    if list_tools:
+        for tool in tools:
+            print(f"{tool.name}\t{tool.prompt_snippet or tool.description}")
+        return
+
+    if not prompt:
+        raise click.UsageError("Missing prompt.")
+    raise click.ClickException("toolcall execution is not implemented yet.")
+
+
 def _run_chat(
     *,
     app_config: AppConfig,
@@ -218,7 +244,7 @@ def _provider_records(app_config: AppConfig) -> Dict[str, Dict[str, Any]]:
     return records
 
 
-SUBCOMMAND_NAMES = {"chat", "inspect", "provider"}
+SUBCOMMAND_NAMES = {"chat", "inspect", "provider", "toolcall"}
 PASSTHROUGH_FLAGS = {"-h", "--help", "-V", "--version"}
 
 
