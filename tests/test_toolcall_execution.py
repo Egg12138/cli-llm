@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from cli_llm.config import AppConfig
-from cli_llm.toolcalls import ToolCallError, ToolcallService, get_tool_definitions
+from cli_llm.toolcalls import ToolCallError, ToolcallService, get_tool_definitions, parse_streaming_tool_calls
 
 
 class ToolCallProvider:
@@ -79,3 +79,45 @@ def test_toolcall_service_executes_bash_when_explicitly_enabled(tmp_path) -> Non
     assert result.tool == "bash"
     assert result.stdout == "enabled"
     assert result.exit_code == 0
+
+
+def test_parse_streaming_tool_calls_accumulates_arguments_by_index() -> None:
+    chunks = [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id="call_1",
+                                function=SimpleNamespace(name="read", arguments='{"pa'),
+                            )
+                        ]
+                    )
+                )
+            ]
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id=None,
+                                function=SimpleNamespace(name=None, arguments='th":"README.md"}'),
+                            )
+                        ]
+                    )
+                )
+            ]
+        ),
+    ]
+
+    calls = parse_streaming_tool_calls(chunks)
+
+    assert len(calls) == 1
+    assert calls[0].id == "call_1"
+    assert calls[0].name == "read"
+    assert calls[0].arguments == {"path": "README.md"}

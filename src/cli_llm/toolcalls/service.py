@@ -75,6 +75,44 @@ def parse_tool_calls(response: Any) -> List[ToolCall]:
     return calls
 
 
+def parse_streaming_tool_calls(chunks: Iterable[Any]) -> List[ToolCall]:
+    blocks: Dict[int, Dict[str, str]] = {}
+    for chunk in chunks:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        delta = getattr(choices[0], "delta", None)
+        for raw_call in getattr(delta, "tool_calls", None) or []:
+            index = getattr(raw_call, "index", None)
+            if index is None:
+                index = len(blocks)
+            block = blocks.setdefault(index, {"id": "", "name": "", "arguments": ""})
+            call_id = getattr(raw_call, "id", None)
+            if call_id:
+                block["id"] = str(call_id)
+            function = getattr(raw_call, "function", None)
+            if function is None:
+                continue
+            name = getattr(function, "name", None)
+            if name:
+                block["name"] = str(name)
+            arguments = getattr(function, "arguments", None)
+            if arguments:
+                block["arguments"] += str(arguments)
+
+    calls: List[ToolCall] = []
+    for index in sorted(blocks):
+        block = blocks[index]
+        try:
+            arguments = json.loads(block["arguments"] or "{}")
+        except json.JSONDecodeError as exc:
+            raise ToolCallError(f"Invalid streamed tool arguments for {block['name']}: {exc}") from exc
+        if not isinstance(arguments, dict):
+            raise ToolCallError(f"Streamed tool arguments for {block['name']} must be a JSON object.")
+        calls.append(ToolCall(id=block["id"], name=block["name"], arguments=arguments))
+    return calls
+
+
 def validate_arguments(tool: ToolDefinition, arguments: Dict[str, Any]) -> Dict[str, Any]:
     schema = tool.parameters
     required = schema.get("required", [])
