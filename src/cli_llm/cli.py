@@ -47,10 +47,10 @@ def cli() -> None:
     "-o", "--output-codes", nargs=1, default=None, help=HELP_TEXTS["output_codes"]
 )
 @click.option("-d", "--debug", is_flag=True, help=HELP_TEXTS["debug"], default=False)
-@click.option("--localtest", is_flag=True, help=HELP_TEXTS["test"], default=False)
-@click.option("--count-tokens", is_flag=True, help=HELP_TEXTS["count_tokens"])
+@click.option("-L", "--localtest", is_flag=True, help=HELP_TEXTS["test"], default=False)
+@click.option("-c", "--count-tokens", is_flag=True, help=HELP_TEXTS["count_tokens"])
 @click.option(
-    "--input-mode",
+    "-i", "--input-mode",
     type=click.Choice(["prompt", "editor", "stdin"]),
     default="prompt",
     help="Input mode: prompt_toolkit (default), external $EDITOR, or multi-line stdin.",
@@ -88,10 +88,8 @@ def chat_command(
 
 
 @cli.command("inspect")
-@click.option("--json", "json_mode", is_flag=True, help="Print provider data as JSON.")
-@click.option(
-    "--all",
-    "all_fields",
+@click.option("-j", "--json", "json_mode", is_flag=True, help="Print provider data as JSON.")
+@click.option("-a", "--all", "all_fields",
     is_flag=True,
     default=False,
     help="Print all fields of provder(incuding keys).",
@@ -150,9 +148,7 @@ def provider() -> None:
 
 @provider.command("models")
 @click.argument("provider_name", required=False)
-@click.option(
-    "--json", "json_mode", is_flag=True, help="Print only the model list as JSON."
-)
+@click.option("-j", "--json", "json_mode", is_flag=True, help="Print only the model list as JSON.")
 def provider_models(provider_name: Optional[str], json_mode: bool) -> None:
     """Show the models declared for a provider profile."""
 
@@ -182,15 +178,13 @@ def provider_models(provider_name: Optional[str], json_mode: bool) -> None:
 
 @cli.command("toolcall")
 @click.argument("prompt", required=False)
-@click.option("--tools", "tools_csv", help="Comma-separated preset tools to enable.")
-@click.option("--list-tools", is_flag=True, help="List enabled preset tools and exit.")
+@click.option("-t", "--tools", "tools_csv", help="Comma-separated preset tools to enable.")
+@click.option("-l", "--list-tools", is_flag=True, help="List enabled preset tools and exit.")
 @click.option(
     "-p", "--provider", help=HELP_TEXTS.get("provider", "Select the provider profile.")
 )
 @click.option("-m", "--model", help=HELP_TEXTS["model"])
-@click.option(
-    "--json", "json_mode", is_flag=True, help="Print tool execution result as JSON."
-)
+@click.option("-j", "--json", "json_mode", is_flag=True, help="Print tool execution result as JSON.")
 def toolcall_command(
     prompt: Optional[str],
     tools_csv: Optional[str],
