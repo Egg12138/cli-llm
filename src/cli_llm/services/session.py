@@ -9,12 +9,12 @@ import signal
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import tiktoken
 
 from ..config import TIPF, RSTF, ERRF
-from ..providers import OpenAIProvider
+from ..providers import ChatRequest, OpenAIProvider
 from ..renderers import ResponseRenderer
 from .. import prompts
 from ..prompts import SYS_ROLES
@@ -148,22 +148,21 @@ class ChatService:
             LOGGER.info("📊 Input tokens: %s", token_count)
 
         LOGGER.info("🚀 Request to %s (%s)", model, "non-stream" if no_stream else "stream")
-        client = self.provider.client()
-
-        create_params: Dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "extra_headers": self.provider.config.extra_headers,
-        }
+        response_format = None
         if json_output:
-            create_params["response_format"] = {"type": "json_object"}
+            response_format = {"type": "json_object"}
 
         start_time = time.time()
         try:
             if not no_stream:
-                create_params["stream"] = True
-                response = client.chat.completions.create(**create_params)
+                request = ChatRequest(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    response_format=response_format,
+                    stream=True,
+                )
+                response = self.provider.create_chat(request)
                 print(f"{TIPF} 💭Generating...{RSTF}")
                 full_content = self.renderer.process_streamed_chunk(
                     response,
@@ -175,7 +174,14 @@ class ChatService:
                     self.token_tracker.add_output(output_token_count)
                     LOGGER.info("📊 Streamed output tokens: %s", output_token_count)
             else:
-                response = client.chat.completions.create(**create_params)
+                request = ChatRequest(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    response_format=response_format,
+                    stream=False,
+                )
+                response = self.provider.create_chat(request)
                 answer = self.renderer.process_unstreamed_chunk(
                     response,
                     time.time() - start_time,

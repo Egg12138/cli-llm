@@ -12,7 +12,7 @@ import click # type: ignore
 from .utils import colored, RSTF, NOTF, TIPF
 from ._version import __version__
 from .config import AppConfig, ConfigLoader, HELP_TEXTS, setup_logging
-from .providers import OpenAIProvider
+from .providers import ProviderRouter
 from .renderers import ResponseRenderer
 from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_input
 
@@ -167,7 +167,7 @@ def _run_chat(
     active_role = role or app_config.default_role
     full_prompt = "\n".join(filter(None, [prompt, stdin_input]))
 
-    provider_client = OpenAIProvider(app_config)
+    provider_client = ProviderRouter(app_config).resolve()
     renderer = ResponseRenderer(app_config)
     token_tracker = TokenTracker()
     chat_service = ChatService(provider_client, renderer, token_tracker)

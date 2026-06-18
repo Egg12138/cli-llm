@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import openai
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 from ..config import AppConfig
+from .types import ChatRequest
 
 
 class ProviderError(RuntimeError):
@@ -29,6 +30,8 @@ class OpenAIProvider:
                 raise ProviderError(str(exc)) from exc
         return self._client
 
-    def create_chat(self, **kwargs: Any) -> Any:
-        """Proxy to chat completion creation."""
-        return self.client().chat.completions.create(**kwargs)
+    def create_chat(self, request: ChatRequest) -> Any:
+        """Create a chat completion through an OpenAI-compatible endpoint."""
+        return self.client().chat.completions.create(
+            **request.to_openai_params(self.config.extra_headers)
+        )
