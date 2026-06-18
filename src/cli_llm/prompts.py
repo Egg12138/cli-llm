@@ -192,7 +192,8 @@ output_schema: |
         'chat': CHAT_PROMPT,
         'creative': CREATIVE_PROMPT,
         'general': SMART_PROMPT,
-        'meta': META_PROMPT
+        'normal': CHAT_PROMPT,
+        'meta': META_PROMPT,
     }
 
 # Load system prompts

@@ -81,11 +81,10 @@ class ChatService:
         self.renderer = renderer
         self.token_tracker = token_tracker
 
-    def get_sys_role(self, role: str) -> prompts.SystemPrompt:
-        default_role = prompts.SystemPrompt.default_role()
+    def get_sys_role(self, role: str, fallback: str = "coder") -> prompts.SystemPrompt:
         if role not in SYS_ROLES:
-            LOGGER.warning("role %s is not predefined, using %s", role, default_role)
-            return SYS_ROLES[default_role]
+            LOGGER.warning("role %s is not predefined, using %s", role, fallback)
+            return SYS_ROLES[fallback]
         return SYS_ROLES[role]
 
     def count_tokens_in_messages(self, messages: list, model: str) -> int:
@@ -130,8 +129,9 @@ class ChatService:
         count_tokens: bool = False,
         custom_temp: Optional[float] = None,
         json_output: bool = False,
+        role_fallback: str = "coder",
     ) -> None:
-        role = self.get_sys_role(role_name)
+        role = self.get_sys_role(role_name, fallback=role_fallback)
         temperature = custom_temp if custom_temp is not None else role.temperature
 
         if json_output and "json" not in prompt.lower():
