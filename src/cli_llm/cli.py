@@ -301,6 +301,7 @@ def _run_chat(
         no_stream=no_stream,
         model=active_model,
         role_name=active_role,
+        role_fallback=app_config.default_role,
         count_tokens=count_tokens,
         custom_temp=temp,
         json_output=json_output,
@@ -321,14 +322,13 @@ def _provider_records(app_config: AppConfig) -> Dict[str, Dict[str, Any]]:
         }
         records[name] = record
 
-    active = records.setdefault(app_config.provider, {})
-    active["api_endpoint"] = app_config.api_endpoint
-    active["default_model"] = app_config.default_model
-    active.setdefault("models", [])
-    active["has_api_key"] = bool(app_config.api_key or active.get("has_api_key"))
-    active["source"] = "active"
-    if app_config.default_model and app_config.default_model not in active["models"]:
-        active["models"].append(app_config.default_model)
+    active = records.get(app_config.provider)
+    if active is not None:
+        active["has_api_key"] = bool(app_config.api_key or active.get("has_api_key"))
+        active.setdefault("models", [])
+        active["source"] = "active"
+        if app_config.default_model and app_config.default_model not in active["models"]:
+            active["models"].append(app_config.default_model)
 
     return records
 
