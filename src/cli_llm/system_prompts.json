@@ -24,4 +24,3 @@
     "description": "Meta-prompt generator that creates optimized prompts using Best-of-N sampling methodology",
     "temperature": 0.8
   }
-}

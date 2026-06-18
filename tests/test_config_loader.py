@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+from cli_llm import config as config_module
 from cli_llm.config import ConfigLoader, DEFAULT_CONFIG_VALUES
 
 
-def test_defaults_used_when_no_sources(tmp_path) -> None:
+def _clear_config_env(monkeypatch) -> None:
+    for key in (
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENAI_MODEL",
+        "CLI_LLM_DEFAULT_ROLE",
+        "CLI_LLM_PROVIDER",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_defaults_used_when_no_sources(tmp_path, monkeypatch) -> None:
+    _clear_config_env(monkeypatch)
     loader = ConfigLoader(user_config_path=tmp_path / "missing.toml")
     config = loader.load(environment={})
 
@@ -13,7 +26,8 @@ def test_defaults_used_when_no_sources(tmp_path) -> None:
     assert config.default_role == DEFAULT_CONFIG_VALUES["default_role"]
 
 
-def test_user_file_overrides_defaults(tmp_path) -> None:
+def test_user_file_overrides_defaults(tmp_path, monkeypatch) -> None:
+    _clear_config_env(monkeypatch)
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         """
@@ -80,9 +94,39 @@ def test_cli_overrides_take_highest_priority(tmp_path) -> None:
     assert config.provider == "openai"
 
 
-def test_provider_defaults_used_when_section_missing(tmp_path) -> None:
+def test_provider_defaults_used_when_section_missing(tmp_path, monkeypatch) -> None:
+    _clear_config_env(monkeypatch)
     loader = ConfigLoader(user_config_path=tmp_path / "missing.toml")
     config = loader.load(environment={}, cli_overrides={})
 
     assert config.provider == DEFAULT_CONFIG_VALUES["provider"]
     assert config.providers == {}
+
+
+def test_loader_reads_legacy_config_path(tmp_path, monkeypatch) -> None:
+    _clear_config_env(monkeypatch)
+    primary = tmp_path / ".cli-llm" / "config.toml"
+    legacy = tmp_path / ".cli_llm" / "config.toml"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(
+        """
+[provider]
+api_key = "legacy-key"
+api_endpoint = "https://legacy.example/v1"
+
+[defaults]
+provider = "openai"
+model = "legacy-model"
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", primary)
+    monkeypatch.setattr(config_module, "LEGACY_CONFIG_PATH", legacy)
+
+    loader = ConfigLoader()
+    config = loader.load(environment={})
+
+    assert config.api_key == "legacy-key"
+    assert config.api_endpoint == "https://legacy.example/v1"
+    assert config.default_model == "legacy-model"
