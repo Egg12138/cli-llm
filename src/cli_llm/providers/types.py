@@ -14,6 +14,8 @@ class ChatRequest:
     messages: List[Dict[str, Any]]
     temperature: Optional[float] = None
     response_format: Optional[Dict[str, Any]] = None
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Any] = None
     stream: bool = False
 
     def to_openai_params(self, extra_headers: Dict[str, str]) -> Dict[str, Any]:
@@ -25,6 +27,10 @@ class ChatRequest:
         }
         if self.response_format is not None:
             params["response_format"] = self.response_format
+        if self.tools:
+            params["tools"] = self.tools
+        if self.tool_choice is not None:
+            params["tool_choice"] = self.tool_choice
         if self.stream:
             params["stream"] = True
         return params

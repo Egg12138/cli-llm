@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import select
 import sys
 from typing import Any, Dict, Optional
@@ -15,7 +16,7 @@ from .config import AppConfig, ConfigLoader, HELP_TEXTS, setup_logging
 from .providers import ProviderRouter
 from .renderers import ResponseRenderer
 from .services import ChatService, TokenTracker, ensure_url_parser_ok, sanitize_input
-from .toolcalls import get_tool_definitions
+from .toolcalls import ToolCallError, ToolcallService, get_tool_definitions
 
 CONFIG_LOADER = ConfigLoader()
 
@@ -142,7 +143,17 @@ def provider_models(provider_name: Optional[str], json_mode: bool) -> None:
 @click.argument("prompt", required=False)
 @click.option("--tools", "tools_csv", help="Comma-separated preset tools to enable.")
 @click.option("--list-tools", is_flag=True, help="List enabled preset tools and exit.")
-def toolcall_command(prompt: Optional[str], tools_csv: Optional[str], list_tools: bool) -> None:
+@click.option("-p", "--provider", help=HELP_TEXTS.get("provider", "Select the provider profile."))
+@click.option("-m", "--model", help=HELP_TEXTS["model"])
+@click.option("--json", "json_mode", is_flag=True, help="Print tool execution result as JSON.")
+def toolcall_command(
+    prompt: Optional[str],
+    tools_csv: Optional[str],
+    list_tools: bool,
+    provider: Optional[str],
+    model: Optional[str],
+    json_mode: bool,
+) -> None:
     """Run a single tool-call-oriented request."""
 
     tool_names = None
@@ -160,7 +171,29 @@ def toolcall_command(prompt: Optional[str], tools_csv: Optional[str], list_tools
 
     if not prompt:
         raise click.UsageError("Missing prompt.")
-    raise click.ClickException("toolcall execution is not implemented yet.")
+
+    app_config = CONFIG_LOADER.load(cli_overrides={"default_model": model, "provider": provider})
+    service = ToolcallService(provider=ProviderRouter(app_config).resolve(), cwd=Path.cwd())
+    try:
+        result = service.run(prompt=sanitize_input(prompt), model=app_config.default_model, tools=tools)
+    except ToolCallError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if json_mode:
+        print(
+            json.dumps(
+                {
+                    "tool": result.tool,
+                    "arguments": result.arguments,
+                    "stdout": result.stdout,
+                    "exit_code": result.exit_code,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
 
 
 def _run_chat(
