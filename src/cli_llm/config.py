@@ -26,7 +26,6 @@ DEFAULT_CONFIG_VALUES = {
 }
 
 DEFAULT_CONFIG_PATH = Path.home() / ".cli-llm" / "config.toml"
-LEGACY_CONFIG_PATH = Path.home() / ".cli_llm" / "config.toml"
 
 
 @dataclass(slots=True)
@@ -74,7 +73,6 @@ class ConfigLoader:
     ) -> None:
         self._explicit_user_path = user_config_path is not None
         self.user_config_path = user_config_path or DEFAULT_CONFIG_PATH
-        self._legacy_config_path = LEGACY_CONFIG_PATH
         self.repo_defaults = dict(DEFAULT_CONFIG_VALUES)
         if repo_defaults:
             self.repo_defaults.update({k: v for k, v in repo_defaults.items() if v is not None})
@@ -165,12 +163,8 @@ class ConfigLoader:
         return extracted, provider_profiles
 
     def _resolve_user_config_path(self) -> Optional[Path]:
-        candidates = [self.user_config_path]
-        if not self._explicit_user_path and self._legacy_config_path not in candidates:
-            candidates.append(self._legacy_config_path)
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
+        if self.user_config_path.exists():
+            return self.user_config_path
         return None
 
     def _extract_supported_fields(self, data: Mapping[str, Any]) -> Dict[str, Any]:
@@ -255,7 +249,7 @@ def setup_logging(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch(exist_ok=True)
     except PermissionError:
-        log_dir = Path.home() / ".cli_llm" / "logs"
+        log_dir = Path.home() / ".cli-llm" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         path = log_dir / "cli_llm.log"
 
