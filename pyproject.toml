@@ -4,13 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cli-llm"
-version = "0.2.3.dev0"
+version = "0.2.4"
 description = "Internal CLI client for working with large language models"
 readme = "README.md"
 requires-python = ">=3.9"
-authors = [
-  { name = "Egg12138", email = "xoltraman@outlook.com" },
-]
+authors = [{ name = "Egg12138", email = "xoltraman@outlook.com" }]
 license = { text = "MIT" }
 keywords = ["llm", "cli", "openai", "developer-tools"]
 classifiers = [
@@ -28,16 +26,12 @@ dependencies = [
   "click>=8.1",
   "openai>=1.0.0",
   "tiktoken>=0.5.0",
+  "prompt-toolkit>=3.0.0",
   "tomli>=2.0.1; python_version < \"3.11\"",
 ]
 
 [project.optional-dependencies]
-dev = [
-  "pytest>=7.0.0",
-  "black>=23.0.0",
-  "mypy>=1.0.0",
-  "ruff>=0.5.0",
-]
+dev = ["pytest>=7.0.0", "black>=23.0.0", "mypy>=1.0.0", "ruff>=0.5.0"]
 
 [project.scripts]
 llm = "cli_llm.cli:main"
@@ -56,12 +50,7 @@ packages = ["src/cli_llm"]
 "src/cli_llm/system_prompts.json" = "cli_llm/system_prompts.json"
 
 [tool.hatch.build.targets.sdist]
-include = [
-  "src/cli_llm",
-  "README.md",
-  "CHANGELOG.md",
-  "AGENTS.md",
-]
+include = ["src/cli_llm", "README.md", "CHANGELOG.md", "AGENTS.md"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
