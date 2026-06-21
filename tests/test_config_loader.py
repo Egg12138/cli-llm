@@ -104,11 +104,12 @@ def test_provider_defaults_used_when_section_missing(tmp_path, monkeypatch) -> N
 
 
 def test_loader_reads_legacy_config_path(tmp_path, monkeypatch) -> None:
+    """ConfigLoader with user_config_path pointing to legacy directory reads values."""
     _clear_config_env(monkeypatch)
-    primary = tmp_path / ".cli-llm" / "config.toml"
-    legacy = tmp_path / ".cli_llm" / "config.toml"
-    legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text(
+    legacy_dir = tmp_path / ".cli_llm"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    config_file = legacy_dir / "config.toml"
+    config_file.write_text(
         """
 [provider]
 api_key = "legacy-key"
@@ -121,10 +122,7 @@ model = "legacy-model"
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", primary)
-    monkeypatch.setattr(config_module, "LEGACY_CONFIG_PATH", legacy)
-
-    loader = ConfigLoader()
+    loader = ConfigLoader(user_config_path=config_file)
     config = loader.load(environment={})
 
     assert config.api_key == "legacy-key"

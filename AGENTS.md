@@ -69,20 +69,32 @@ Comment style: less comment. remains comment only for some public function doc s
 11. **One-Click Installer** (0.2.4)  
     `install.sh` — standalone script that installs Python package (editable), creates `~/.local/bin/llm` entry point, sets up `~/.config/cli-llm/config.toml`, optionally builds Rust binary.
 
+12. **Agents Context Toggle** (0.3.0)  
+    `--agents-context` / `-A` flag reads `./AGENTS.md` from cwd and appends it to the system prompt. Size guard (16 KB truncation), sanitization, graceful missing-file handling.
+
+13. **Renderer Upgrade** (0.3.0)  
+    Replaced naive ANSI-based rendering with `rich` and `markdown-it-py`. Syntax-highlighted code blocks, proper markdown rendering, preserved streaming and non-streaming APIs.
+
+14. **Plugin Framework** (0.3.0)  
+    Cargo-style subcommand discovery: unknown subcommands trigger a PATH search for `llm-<subcommand>` executables. If found, the process is replaced via `os.execvp`. Framework only — no bundled plugins.
+
+
+15. **EINO version** (0.3.0)  
+   implement this project using eino
+
+
 ### 🔄 Partially Done / In Progress
 
 - **CLI Options Overhaul** (2.D) — Flags exist (`--provider`, `--role`, `--model`, `--input-mode`, etc.) and have help text, but some legacy flags remain (`--localtest`), and flag naming hasn't been fully audited per the 2.D spec.
-- **Plugins / Subcommand isolation** — Toolcall service provides a `toolcall` subcommand with presets (PS1-like), but no true plugin loading mechanism yet.
 
 ### ❌ Not Yet Started
 
-- **Agents Context Toggle** (2.CD) — `--agents-context` flag to read `./AGENTS.md` as supplemental system context.
 - **Output-Control enhancements** (0.4.x) — Structured response objects, streaming-friendly formatting for automation pipelines.
 - **Extended Provider & Model Metadata** (0.4.x) — Richer config schema (capabilities, defaults per-provider), deeper model list introspection.
 - **Documentation & Release Readiness** (0.4.x) — `docs/` directory, release rehearsal, formal publishing prep.
 - **Rust Parity** (timing TBD) — Align Python abstractions so a Rust reimplementation can reuse the same mental model.
 
-### 🎯 Roadmap Decisions (2025-06-18)
+### 🎯 Roadmap Decisions
 
 The following were discussed and decided:
 
@@ -93,34 +105,18 @@ The following were discussed and decided:
 | Renderer Upgrade | **High priority** | Integrate `rich`/`markdown-it` for syntax-highlighted output. Current plain rendering is too basic. |
 | Output Automation Pipeline | **Not needed** | Existing `--json-output` is sufficient. No structured streaming format required. |
 | Rust Parity | **Hold** | Keep `src-rs/` tree dormant. No active Rust work; revisit when there's a clear need. |
+| Eino framwork version | **High priority** | Use `src-go/` tree dormant. Implement this project in a modern agentic scheduler |
 | Config Schema Extension | **Not needed** | Current config structure is fine. Keep code extensible but don't expand schema proactively. |
 
 ### Next milestones (tentative)
 
 **0.3.0** (current track)
-- [ ] Agents Context Toggle (`--agents-context`)
-- [ ] Renderer upgrade (rich/markdown-it integration)
-- [ ] Plugin framework (Plan B: subcommand registration)
+- [x] Agents Context Toggle (`--agents-context`)
+- [x] Renderer upgrade (rich/markdown-it integration)
+- [x] Plugin framework (Plan B: subcommand registration)
+- [ ] refactor src-go with `eino` framework instead of the bear openaiSDK
 
 ---
-
-## Repository Layout
-
-```
-install.sh              — One-click installer
-pyproject.toml          — Python build config + dependencies
-src/cli_llm/            — Python CLI package
-  cli.py                — Click-based CLI entry point
-  config.py             — Layered config loader
-  prompts.py            — Role/prompt management
-  providers/            — Provider abstraction + router
-  renderers/            — Output rendering
-  services/             — Chat service + input handler
-  toolcalls/            — Tool call / function calling
-  utils/                — ANSI colors, misc helpers
-src-rs/                 — Rust prototype (dormant)
-tests/                  — pytest test suite
-```
 
 ## Guiding Principles
 

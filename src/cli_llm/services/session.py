@@ -130,6 +130,7 @@ class ChatService:
         custom_temp: Optional[float] = None,
         json_output: bool = False,
         role_fallback: str = "coder",
+        agents_context_text: str = "",
     ) -> None:
         role = self.get_sys_role(role_name, fallback=role_fallback)
         temperature = custom_temp if custom_temp is not None else role.temperature
@@ -141,6 +142,11 @@ class ChatService:
             {"role": "system", "content": role.content},
             {"role": "user", "content": prompt},
         ]
+
+        if agents_context_text:
+            messages[0]["content"] += (
+                f"\n\n---\n# Project Context (AGENTS.md)\n---\n{agents_context_text}"
+            )
 
         if count_tokens:
             token_count = self.count_tokens_in_messages(messages, model)

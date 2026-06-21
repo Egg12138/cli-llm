@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cli-llm"
-version = "0.2.5"
+version = "0.3.0"
 description = "Internal CLI client for working with large language models"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,6 +28,8 @@ dependencies = [
   "tiktoken>=0.5.0",
   "prompt-toolkit>=3.0.0",
   "tomli>=2.0.1; python_version < \"3.11\"",
+  "rich>=13.0.0",
+  "markdown-it-py>=3.0.0",
 ]
 
 [project.optional-dependencies]

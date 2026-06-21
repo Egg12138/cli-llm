@@ -2,29 +2,19 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ..config import CODEF, RSTF, CLRS, TIPF
-from ..config import AppConfig
+from rich.console import Console
+from rich.markdown import Markdown
+
+from ..config import AppConfig, TIPF, RSTF
+
+_console = Console()
 
 
 def highlight_code_blocks(content: str, session_type: str = "Context") -> str:
-    """Highlight code blocks and bold text with ANSI escape sequences."""
-
-    content = re.sub(
-        r"\*\*(.*?)\*\*",
-        lambda m: f"{CLRS.bold}{CLRS.blue}{m.group(1)}{CLRS.reset}",
-        content,
-        flags=re.DOTALL,
-    )
-
-    def replacer(matcher):
-        return f"{CODEF}{matcher.group(0)}{RSTF}"
-
-    if session_type in ("Context", "Reasoning"):
-        return re.sub(r"`(.*?)`", replacer, content, flags=re.DOTALL)
+    """Legacy compat: returns content unchanged (rich handles formatting)."""
     return content
 
 
@@ -36,34 +26,17 @@ class ResponseRenderer:
 
     def process_streamed_chunk(self, response, count_tokens: bool = False) -> str:
         """Process a streamed response, returning the concatenated text."""
-        in_code_block = False
         full_content = ""
-
         for chunk in response:
             content = chunk.choices[0].delta.content if chunk.choices else None
             if not content:
                 continue
+            _console.out(content, end="")
             if count_tokens:
                 full_content += content
-
-            content = re.sub(
-                r"\*\*(.*?)\*\*",
-                lambda m: f"{CLRS.bold}{CLRS.blue}{m.group(1)}{CLRS.reset}",
-                content,
-            )
-
-            is_code = "`" in content
-            if is_code and not in_code_block:
-                in_code_block = True
-                print(f"{CODEF}{content}", end="")
-            elif is_code and in_code_block:
-                in_code_block = False
-                print(f"{CODEF}{content}{RSTF}", end="")
-            elif not is_code and in_code_block:
-                print(f"{CODEF}{content}", end="")
-            else:
-                print(f"{RSTF}{content}", end="")
-
+        _console.out("\n")
+        if full_content:
+            _console.print(Markdown(full_content))
         return full_content
 
     def process_unstreamed_chunk(
@@ -86,9 +59,8 @@ class ResponseRenderer:
         status = finish_reason_map.get(finish_reason, "Unknown")
 
         if extra_session_type == "Reasoning":
-            print(f"{TIPF}@ {modelname} reasoning ========================================={RSTF}")
+            _console.print(f"{TIPF}@ {modelname} reasoning ========================================={RSTF}")
 
-        answer = highlight_code_blocks(choice.message.content, extra_session_type or "Context")
-        print(answer)
-        print(f"{TIPF}@ {modelname} [{status}] Response time: {response_time:.2f}s:{RSTF}")
+        _console.print(Markdown(choice.message.content))
+        _console.print(f"{TIPF}@ {modelname} [{status}] Response time: {response_time:.2f}s:{RSTF}")
         return choice.message.content

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import select
+import shutil
 import sys
 from typing import Any, Dict, Optional
 
 import click  # type: ignore
 
-from .utils import colored, RSTF, NOTF, TIPF
+from .utils import colored, RSTF, NOTF, TIPF, ERRF
 from ._version import __version__
 from .config import AppConfig, ConfigLoader, HELP_TEXTS, setup_logging
 from .providers import ProviderRouter
@@ -55,6 +57,10 @@ def cli() -> None:
     default="prompt",
     help="Input mode: prompt_toolkit (default), external $EDITOR, or multi-line stdin.",
 )
+@click.option(
+    "-A", "--agents-context", is_flag=True, default=False,
+    help="Read ./AGENTS.md from cwd and append to system prompt.",
+)
 def chat_command(
     prompt: Optional[str],
     no_stream: bool,
@@ -68,6 +74,7 @@ def chat_command(
     localtest: bool,
     count_tokens: bool,
     input_mode: str,
+    agents_context: bool,
 ) -> None:
     app_config = CONFIG_LOADER.load(
         cli_overrides={"default_model": model, "provider": provider}
@@ -84,6 +91,7 @@ def chat_command(
         localtest=localtest,
         count_tokens=count_tokens,
         input_mode=input_mode,
+        agents_context=agents_context,
     )
 
 
@@ -241,6 +249,9 @@ def toolcall_command(
     print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
 
 
+_AGENTS_MAX_BYTES = 16384
+
+
 def _run_chat(
     *,
     app_config: AppConfig,
@@ -254,6 +265,7 @@ def _run_chat(
     localtest: bool,
     count_tokens: bool,
     input_mode: str = "prompt",
+    agents_context: bool = False,
 ) -> None:
     logger = setup_logging()
 
@@ -290,6 +302,24 @@ def _run_chat(
         print(f"Provider base URL: {provider_client.config.api_endpoint}")
         return
 
+    agents_context_text = ""
+    if agents_context:
+        agents_path = os.path.join(os.getcwd(), "AGENTS.md")
+        try:
+            raw = Path(agents_path).read_bytes()
+            if len(raw) > _AGENTS_MAX_BYTES:
+                print(
+                    f"{ERRF}Warning: AGENTS.md exceeds 16 KB, truncating.{RSTF}",
+                    file=sys.stderr,
+                )
+                raw = raw[:_AGENTS_MAX_BYTES]
+            agents_context_text = sanitize_input(raw.decode("utf-8", errors="replace"))
+        except FileNotFoundError:
+            print(
+                f"{ERRF}Warning: ./AGENTS.md not found, skipping agents context.{RSTF}",
+                file=sys.stderr,
+            )
+
     chat_service.chat(
         full_prompt,
         no_stream=no_stream,
@@ -299,6 +329,7 @@ def _run_chat(
         count_tokens=count_tokens,
         custom_temp=temp,
         json_output=json_output,
+        agents_context_text=agents_context_text,
     )
 
     chat_service.display_tokens_if_any()
@@ -335,8 +366,14 @@ def main() -> None:
     args = sys.argv[1:]
     if args and args[0] in PASSTHROUGH_FLAGS:
         forwarded = args
-    elif not args or args[0] not in SUBCOMMAND_NAMES:
+    elif args and args[0] not in SUBCOMMAND_NAMES:
+        plugin_name = f"llm-{args[0]}"
+        plugin_path = shutil.which(plugin_name)
+        if plugin_path:
+            os.execvp(plugin_path, [plugin_path] + args[1:])
         forwarded = ["chat", *args]
+    elif not args:
+        forwarded = ["chat"]
     else:
         forwarded = args
 
