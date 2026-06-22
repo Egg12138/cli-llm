@@ -85,6 +85,36 @@ func TestRenderEntriesPreservesMultilineContent(t *testing.T) {
 	}
 }
 
+func TestRenderEntriesMessageDataError(t *testing.T) {
+	badEntry := model.Entry{Type: model.EntryTypeMessage, Data: []byte("not-json")}
+	got, err := renderEntries([]model.Entry{badEntry}, renderOptions{})
+	if err == nil {
+		t.Fatal("want error for invalid message data, got nil")
+	}
+	if got != nil {
+		t.Errorf("want nil slice on error, got %v", got)
+	}
+}
+
+func TestRenderEntriesGlamourWidth(t *testing.T) {
+	content := "# heading\n\nhello world"
+	entries := []model.Entry{mustMessage(t, "", "assistant", content)}
+	got, err := renderEntries(entries, renderOptions{width: 80})
+	if err != nil {
+		t.Fatalf("renderEntries: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 display entry, got %d", len(got))
+	}
+	joined := strings.Join(got[0].lines, "\n")
+	if !strings.Contains(joined, "assistant") {
+		t.Errorf("role not in lines: %q", joined)
+	}
+	if !strings.Contains(joined, "hello") {
+		t.Errorf("content token %q not in lines: %q", "hello", joined)
+	}
+}
+
 func TestRenderEntriesRawIsVerbatim(t *testing.T) {
 	content := "  weird\tspacing\n## markdown\n\n- item  "
 	entries := []model.Entry{mustMessage(t, "", "assistant", content)}
