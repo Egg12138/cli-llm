@@ -1,6 +1,17 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
+
+func init() {
+	if os.Getenv("NO_COLOR") != "" {
+		lipgloss.SetColorProfile(termenv.Ascii)
+	}
+}
 
 var (
 	headerStyle = lipgloss.NewStyle().Bold(true)
@@ -9,9 +20,13 @@ var (
 
 	selectedStyle = lipgloss.NewStyle().Bold(true)
 
+	roleUserColor      = lipgloss.AdaptiveColor{Light: "4", Dark: "12"}
+	roleAssistantColor = lipgloss.AdaptiveColor{Light: "2", Dark: "10"}
+	roleSystemColor    = lipgloss.AdaptiveColor{Light: "8", Dark: "7"}
+
 	roleStyles = map[string]lipgloss.Style{
-		"user":      lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
-		"assistant": lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		"system":    lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		"user":      lipgloss.NewStyle().Foreground(roleUserColor),
+		"assistant": lipgloss.NewStyle().Foreground(roleAssistantColor),
+		"system":    lipgloss.NewStyle().Foreground(roleSystemColor),
 	}
 )
