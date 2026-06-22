@@ -5,6 +5,19 @@ The format roughly follows [Keep a Changelog](https://keepachangelog.com/) and u
 Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
+
+## [0.3.0] – Extensibility & UX *(internal)*
+### Added
+- `--agents-context` / `-A` flag on `chat` command — reads `./AGENTS.md` from cwd and appends to system prompt. Includes size guard (16 KB truncation), sanitization, and graceful missing-file handling.
+- Plugin framework with cargo-style subcommand discovery — unknown subcommands trigger a PATH search for `llm-<subcommand>` executables, dispatching via `os.execvp`.
+- Comprehensive test coverage for agents context (6 tests) and plugin framework (3 tests).
+### Changed
+- Response renderer upgraded from naive ANSI-based output to `rich` + `markdown-it-py`. Code blocks now receive proper syntax highlighting; markdown formatting is handled natively. Public API preserved (`highlight_code_blocks`, `process_streamed_chunk`, `process_unstreamed_chunk`).
+### Fixed
+- Pre-existing config loader test (`test_loader_reads_legacy_config_path`) repaired after `LEGACY_CONFIG_PATH` constant was removed.
+- Plugin dispatch no longer breaks default-to-chat routing — unknown subcommands without a matching plugin fall back to `chat` instead of erroring.
+
+## [0.2.5] – Toolcall & Installer *(internal)*
 ### Added
 - `providers` and `provider models` CLI subcommands to inspect merged provider metadata and model lists, plus accompanying tests and docs.
 - One-click installer script at `scripts/install.sh` with interactive setup and non-interactive flags for `user` (default), `venv`, and `system` install modes.
