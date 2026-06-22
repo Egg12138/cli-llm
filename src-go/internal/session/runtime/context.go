@@ -51,7 +51,7 @@ func BuildMessages(state graph.State, opts ContextOptions) ([]*schema.Message, e
 }
 
 func systemPrompt(opts ContextOptions) string {
-	return fmt.Sprintf(`You are an expert conversation assistant operating inside llm-session, a multi-turn session harness. Session checkpoints and branches are managed locally outside the model context.
+	return fmt.Sprintf(`You are an expert conversation assistant operating inside llm-session, a multi-turn session harness.
 
 Guidelines:
 - Be concise in your responses.

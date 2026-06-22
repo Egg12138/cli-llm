@@ -32,7 +32,7 @@ func TestBuildContextIncludesSessionSystemPrompt(t *testing.T) {
 			t.Fatalf("system prompt missing %q: %s", want, system.Content)
 		}
 	}
-	for _, forbidden := range []string{"Session:", "branch:", "head:", "work", "main", "abc123"} {
+	for _, forbidden := range []string{"Session:", "branch", "checkpoint", "head:", "work", "main", "abc123"} {
 		if strings.Contains(system.Content, forbidden) {
 			t.Fatalf("system prompt leaked session state %q: %s", forbidden, system.Content)
 		}
