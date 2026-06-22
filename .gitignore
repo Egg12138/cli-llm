@@ -10,6 +10,7 @@ __pycache__
 .pi/
 llm_bash.sh
 /src-go/llm
+/src-go/llm-session
 .codegraph
 src/.cursor
 src/.codegraph

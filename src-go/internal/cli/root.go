@@ -120,6 +120,7 @@ func runRootHelp() int {
 	fmt.Fprintln(commandStdout, "  chat      Run a chat request")
 	fmt.Fprintln(commandStdout, "  inspect   Inspect provider profiles")
 	fmt.Fprintln(commandStdout, "  provider  Inspect provider metadata")
+	fmt.Fprintln(commandStdout, "  session   Run the llm-session plugin")
 	fmt.Fprintln(commandStdout, "  toolcall  Run a single tool-call request")
 	return 0
 }

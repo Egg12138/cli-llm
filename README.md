@@ -22,6 +22,8 @@ The project currently targets team workflows only; no public release is schedule
 - Go/Eino parity track: `src-go/` implements the current command surface with Eino compose workflows for `chat` and constrained `toolcall`, plus an isolated ADK learning example.
 
 ### 0.4.x – Advanced Provider & Release Prep
+- Go-only `llm-session` plugin for persistent multi-turn sessions, checkpoints,
+  branches, and resume.
 - Richer output-control pipelines for automation.
 - Extended provider/model metadata + configuration depth.
 - Documentation + release rehearsal; keep interfaces aligned so future Rust work can plug in without rewrites.
@@ -121,6 +123,34 @@ Select a provider via config, `CLI_LLM_PROVIDER`, or the `--provider` flag. Only
 ## Plugin Guide
 
 cli-llm supports cargo-style plugins: any executable named `llm-<name>` on your `PATH` becomes a subcommand.
+
+### Go session plugin
+
+`llm-session` is the Go-only multi-turn session plugin. It is not installed by
+the Python installer yet; build it manually from `src-go/`:
+
+```bash
+cd src-go
+go build ./cmd/llm-session
+```
+
+Put the built `llm-session` binary on `PATH` to run either form:
+
+```bash
+llm-session
+llm-session --resume
+llm-session --resume work
+llm session --resume work
+```
+
+Sessions are stored as append-only JSONL files in
+`~/.cli-llm/sessions/<name>.jsonl`. The MVP slash commands are `/branches`,
+`/switch <branch-or-hash>`, `/checkpoint <name>`, and `/exit`.
+
+Normal session chat writes to the terminal main buffer so regular scrollback
+keeps working. The transcript overlay path uses alternate screen mode and
+restores the terminal when it exits; the current line reader recognizes the
+Ctrl+T control character when it is delivered by the terminal input path.
 
 ### Using plugins
 

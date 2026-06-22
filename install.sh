@@ -231,7 +231,111 @@ else
 	info "Rust toolchain not found or src-rs/ missing — skipping Rust build."
 fi
 
-# ── phase 6: config directory ────────────────────────────────
+# ── phase 6: plugin discovery and installation ──────────────────
+
+_install_go_plugin() {
+	local name="$1"
+	local dir="$2"
+	info "Building plugin $name (Go) …"
+	(
+		cd "$PROJECT_ROOT/src-go"
+		go build -ldflags="-s -w" -o "$PROJECT_ROOT/src-go/$name" "./cmd/$name/" 2>&1 | sed "s/^/  $LOG_PREFIX /"
+	)
+	local bin="$PROJECT_ROOT/src-go/$name"
+	if [ -x "$bin" ]; then
+		cp "$bin" "$LOCAL_BIN/$name"
+		ok "Plugin installed → $LOCAL_BIN/$name"
+		INSTALLED_PLUGINS+=("$name")
+	else
+		warn "Plugin $name build failed — skipping"
+	fi
+}
+
+# Discover available plugins
+PLUGIN_NAMES=()
+PLUGIN_DIRS=()
+PLUGIN_TYPES=()
+PLUGIN_DESCS=()
+INSTALLED_PLUGINS=()
+
+# Scan Go plugins (src-go/cmd/llm-* directories)
+if [ -d "$PROJECT_ROOT/src-go/cmd" ]; then
+	for plugin_dir in "$PROJECT_ROOT/src-go/cmd"/llm-*; do
+		[ -d "$plugin_dir" ] || continue
+		[ -f "$plugin_dir/main.go" ] || continue
+		pname="$(basename "$plugin_dir")"
+		pdesc=$(head -20 "$plugin_dir/main.go" 2>/dev/null | grep -m1 '//' | sed 's|//[[:space:]]*||')
+		[ -z "$pdesc" ] && pdesc="Go plugin"
+		PLUGIN_NAMES+=("$pname")
+		PLUGIN_DIRS+=("$plugin_dir")
+		PLUGIN_TYPES+=("go")
+		PLUGIN_DESCS+=("$pdesc")
+	done
+fi
+
+plugin_count=${#PLUGIN_NAMES[@]}
+
+if [ "$plugin_count" -gt 0 ]; then
+	echo ""
+	echo "  ┌─ Plugins ──────────────────────────────────┐"
+	echo "  │  The following plugins were discovered:     │"
+	for ((pi=0; pi<plugin_count; pi++)); do
+		display_name="${PLUGIN_NAMES[$pi]#llm-}"
+		printf "  │  [%d] %-20s — %s\n" "$((pi+1))" "$display_name" "${PLUGIN_DESCS[$pi]}"
+	done
+	echo "  └─────────────────────────────────────────────┘"
+	echo ""
+	echo "  Enter numbers to install (space-separated),"
+	echo "  'all' for all, or press Enter to skip:"
+	printf "  > "
+	read -r selection
+
+	case "${selection:-}" in
+		"" | none | skip)
+			info "Skipping plugin installation."
+			;;
+		all | a | ALL)
+			for ((pi=0; pi<plugin_count; pi++)); do
+				case "${PLUGIN_TYPES[$pi]}" in
+					go)
+						if command_exists go; then
+							_install_go_plugin "${PLUGIN_NAMES[$pi]}" "${PLUGIN_DIRS[$pi]}"
+						else
+							warn "Go not found — cannot build ${PLUGIN_NAMES[$pi]} (skipping)"
+						fi
+						;;
+					*)
+						warn "Unknown plugin type '${PLUGIN_TYPES[$pi]}' for ${PLUGIN_NAMES[$pi]} — skipping"
+						;;
+				esac
+			done
+			;;
+		*)
+			for num in $selection; do
+				case "$num" in
+					''|*[!0-9]*) continue ;;
+				esac
+				if [ "$num" -ge 1 ] 2>/dev/null && [ "$num" -le "$plugin_count" ] 2>/dev/null; then
+					idx=$((num-1))
+					case "${PLUGIN_TYPES[$idx]}" in
+						go)
+							if command_exists go; then
+								_install_go_plugin "${PLUGIN_NAMES[$idx]}" "${PLUGIN_DIRS[$idx]}"
+							else
+								warn "Go not found — cannot build ${PLUGIN_NAMES[$idx]} (skipping)"
+							fi
+							;;
+						*)
+							warn "Unknown plugin type '${PLUGIN_TYPES[$idx]}' for ${PLUGIN_NAMES[$idx]} — skipping"
+							;;
+					esac
+				fi
+			done
+			;;
+	esac
+fi
+
+# ── phase 7: config directory ────────────────────────────────
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cli-llm"
 mkdir -p "$CONFIG_DIR"
@@ -257,7 +361,7 @@ if [ "$CONFIG_DIR" != "$HOME/.cli-llm" ]; then
 	fi
 fi
 
-# ── phase 7: shell helpers (optional) ────────────────────────
+# ── phase 8: shell helpers (optional) ────────────────────────
 
 if [ -f "$PROJECT_ROOT/llm_bash.sh" ]; then
 	SHELL_RC="${HOME}/.bashrc"
@@ -277,17 +381,28 @@ if [ -f "$PROJECT_ROOT/llm_bash.sh" ]; then
 	info "(Or run it directly: source llm_bash.sh)"
 fi
 
-# ── done ─────────────────────────────────────────────────────
+	# ── done ─────────────────────────────────────────────────────
 
-echo ""
-echo "  ┌──────────────────────────────────────┐"
-echo "  │  \e[1mcli-llm installation complete\e[0m      │"
-echo "  └──────────────────────────────────────┘"
-echo ""
-echo "    Run \`llm --help\` to verify the CLI works."
-echo "    Run \`llm chat\` to start a conversation."
-echo ""
-echo "    Binary:      $LOCAL_BIN/llm"
-echo "    Config file: $CONFIG_DIR/config.toml"
-echo "    Project:     $PROJECT_ROOT"
-echo ""
+	echo ""
+	echo "  ┌──────────────────────────────────────┐"
+	echo "  │  \e[1mcli-llm installation complete\e[0m      │"
+	echo "  └──────────────────────────────────────┘"
+	echo ""
+	echo "    Run \`llm --help\` to verify the CLI works."
+	echo "    Run \`llm chat\` to start a conversation."
+	if [ ${#INSTALLED_PLUGINS[@]} -gt 0 ]; then
+		for p in "${INSTALLED_PLUGINS[@]}"; do
+			local_name="${p#llm-}"
+			echo "    Run \`llm ${local_name}\` to use the ${local_name} plugin."
+		done
+	fi
+	echo ""
+	echo "    Binary:      $LOCAL_BIN/llm"
+	if [ ${#INSTALLED_PLUGINS[@]} -gt 0 ]; then
+		for p in "${INSTALLED_PLUGINS[@]}"; do
+			echo "    Plugin:      $LOCAL_BIN/$p"
+		done
+	fi
+	echo "    Config file: $CONFIG_DIR/config.toml"
+	echo "    Project:     $PROJECT_ROOT"
+	echo ""

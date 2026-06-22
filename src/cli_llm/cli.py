@@ -184,6 +184,23 @@ def provider_models(provider_name: Optional[str], json_mode: bool) -> None:
         print(f"- {name}")
 
 
+@cli.command(
+    "session",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
+@click.pass_context
+def session_command(ctx: click.Context) -> None:
+    """Run the Go llm-session plugin."""
+
+    plugin_path = shutil.which("llm-session")
+    if not plugin_path:
+        raise click.ClickException(
+            "llm-session plugin is not installed. Build it with "
+            "`cd src-go && go build ./cmd/llm-session`, then put `llm-session` on PATH."
+        )
+    os.execvp(plugin_path, [plugin_path] + list(ctx.args))
+
+
 @cli.command("toolcall")
 @click.argument("prompt", required=False)
 @click.option("-t", "--tools", "tools_csv", help="Comma-separated preset tools to enable.")
@@ -358,7 +375,7 @@ def _provider_records(app_config: AppConfig) -> Dict[str, Dict[str, Any]]:
     return records
 
 
-SUBCOMMAND_NAMES = {"chat", "inspect", "provider", "toolcall"}
+SUBCOMMAND_NAMES = {"chat", "inspect", "provider", "session", "toolcall"}
 PASSTHROUGH_FLAGS = {"-h", "--help", "-V", "--version"}
 
 

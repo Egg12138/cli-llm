@@ -8,10 +8,10 @@ type Defaults struct {
 }
 
 var DefaultConfigValues = Defaults{
-	APIEndpoint:  "https://api.openai.com/v1",
-	DefaultModel: "deepseek-chat",
+	APIEndpoint:  "https://api.deepseek.com/v1",
+	DefaultModel: "deepseek-v4-flash",
 	DefaultRole:  "coder",
-	Provider:     "openai",
+	Provider:     "deepseek",
 }
 
 type ProviderConfig struct {

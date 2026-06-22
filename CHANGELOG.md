@@ -7,6 +7,7 @@ Until then, entries describe internal milestones so the team can track progress.
 ## [Unreleased]
 ### Added
 - `src-go/` Eino parity implementation covering layered config, prompt/AGENTS handling, OpenAI-compatible provider factory, compose-based `chat`, constrained `toolcall`, inspect/provider metadata commands, and cargo-style plugin dispatch.
+- Go-only `llm-session` plugin binary with append-only JSONL sessions under `~/.cli-llm/sessions`, auto checkpoints, branch switching, resume modes, auto titling, context compression primitives, normal-buffer REPL behavior, and Ctrl+T transcript overlay support.
 - Isolated `src-go/examples/chatmodel_agent` ADK learning spike with a deterministic local tool example.
 - Go parity documentation at `src-go/README.md` and implementation plan at `docs/plans/2026-06-22-eino-reimplementation.md`.
 
