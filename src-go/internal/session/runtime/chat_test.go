@@ -69,8 +69,8 @@ func TestChatTurnAppendsUserAssistantAndCheckpoint(t *testing.T) {
 	if out.String() != "hello\n" {
 		t.Fatalf("expected streamed writer output hello newline, got %q", out.String())
 	}
-	if len(store.entries) != 3 {
-		t.Fatalf("expected user assistant checkpoint entries, got %#v", store.entries)
+	if len(store.entries) != 4 {
+		t.Fatalf("expected user assistant checkpoint and branch pointer entries, got %#v", store.entries)
 	}
 	if store.entries[0].Type != model.EntryTypeMessage || mustMessageData(t, store.entries[0]).Role != "user" {
 		t.Fatalf("expected user entry first, got %#v", store.entries[0])
@@ -81,12 +81,22 @@ func TestChatTurnAppendsUserAssistantAndCheckpoint(t *testing.T) {
 	if store.entries[2].Type != model.EntryTypeCheckpoint {
 		t.Fatalf("expected checkpoint third, got %#v", store.entries[2])
 	}
+	if store.entries[3].Type != model.EntryTypeCheckpoint {
+		t.Fatalf("expected branch pointer checkpoint fourth, got %#v", store.entries[3])
+	}
 	checkpoint, err := store.entries[2].CheckpointData()
 	if err != nil {
 		t.Fatalf("CheckpointData returned error: %v", err)
 	}
 	if checkpoint.ReturnTo != store.entries[1].ID {
 		t.Fatalf("expected checkpoint returnTo assistant %q, got %q", store.entries[1].ID, checkpoint.ReturnTo)
+	}
+	pointer, err := store.entries[3].CheckpointData()
+	if err != nil {
+		t.Fatalf("branch pointer CheckpointData returned error: %v", err)
+	}
+	if pointer.Name != "main" || pointer.ReturnTo != store.entries[2].ID {
+		t.Fatalf("unexpected branch pointer %#v", pointer)
 	}
 	if state.HeadID != store.entries[2].ID || state.Branches["main"].HeadID != store.entries[2].ID {
 		t.Fatalf("state head not advanced to checkpoint: %#v", state)

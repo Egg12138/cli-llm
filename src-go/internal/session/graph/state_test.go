@@ -74,6 +74,41 @@ func TestStateReloadMainHeadIgnoresNamedBranchMetadata(t *testing.T) {
 	}
 }
 
+func TestStateReloadUsesNamedMainPointerWhenLaterBranchHasConversation(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	root := mustMessage(t, "", "user", "root")
+	mainAssistant := mustMessage(t, root.ID, "assistant", "main")
+	mainCheckpoint, err := model.NewCheckpoint(mainAssistant.ID, "", mainAssistant.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint main returned error: %v", err)
+	}
+	mainPointer, err := model.NewCheckpoint(mainCheckpoint.ID, "main", mainCheckpoint.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint main pointer returned error: %v", err)
+	}
+	branchUser := mustMessage(t, mainCheckpoint.ID, "user", "branch")
+	branchAssistant := mustMessage(t, branchUser.ID, "assistant", "experiment")
+	branchCheckpoint, err := model.NewCheckpoint(branchAssistant.ID, "", branchAssistant.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint branch returned error: %v", err)
+	}
+	branchPointer, err := model.NewCheckpoint(branchCheckpoint.ID, "experiment", branchCheckpoint.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint branch pointer returned error: %v", err)
+	}
+
+	state := NewState([]model.Entry{root, mainAssistant, mainCheckpoint, mainPointer, branchUser, branchAssistant, branchCheckpoint, branchPointer})
+
+	if state.Branches["main"].HeadID != mainCheckpoint.ID {
+		t.Fatalf("expected main head %q, got %#v", mainCheckpoint.ID, state.Branches["main"])
+	}
+	if state.Branches["experiment"].HeadID != branchCheckpoint.ID {
+		t.Fatalf("expected experiment head %q, got %#v", branchCheckpoint.ID, state.Branches["experiment"])
+	}
+}
+
 func TestStateCheckpointLabelsCurrentHeadWithBranch(t *testing.T) {
 	t.Parallel()
 

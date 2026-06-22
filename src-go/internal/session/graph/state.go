@@ -29,12 +29,16 @@ func NewState(entries []model.Entry) *State {
 		Branches:      map[string]Branch{"main": {Name: "main"}},
 		CurrentBranch: "main",
 	}
+	mainPointerSeen := false
 	for _, entry := range entries {
 		_ = state.AddEntry(entry)
 		conversationHead := entry.ID
 		if entry.Type == model.EntryTypeCheckpoint {
 			data, err := entry.CheckpointData()
 			if err == nil && data.Name != "" {
+				if data.Name == "main" {
+					mainPointerSeen = true
+				}
 				parent := state.CurrentBranch
 				if branch, ok := state.Branches[data.Name]; ok && branch.Parent != "" {
 					parent = branch.Parent
@@ -47,7 +51,11 @@ func NewState(entries []model.Entry) *State {
 			state.HeadID = conversationHead
 		}
 	}
-	state.Branches["main"] = Branch{Name: "main", HeadID: state.HeadID}
+	if !mainPointerSeen {
+		state.Branches["main"] = Branch{Name: "main", HeadID: state.HeadID}
+	} else {
+		state.HeadID = state.Branches["main"].HeadID
+	}
 	return state
 }
 
