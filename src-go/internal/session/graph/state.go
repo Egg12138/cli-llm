@@ -31,7 +31,7 @@ func NewState(entries []model.Entry) *State {
 	}
 	for _, entry := range entries {
 		_ = state.AddEntry(entry)
-		state.HeadID = entry.ID
+		conversationHead := entry.ID
 		if entry.Type == model.EntryTypeCheckpoint {
 			data, err := entry.CheckpointData()
 			if err == nil && data.Name != "" {
@@ -40,7 +40,11 @@ func NewState(entries []model.Entry) *State {
 					parent = branch.Parent
 				}
 				state.Branches[data.Name] = Branch{Name: data.Name, HeadID: data.ReturnTo, Parent: parent}
+				conversationHead = ""
 			}
+		}
+		if conversationHead != "" {
+			state.HeadID = conversationHead
 		}
 	}
 	state.Branches["main"] = Branch{Name: "main", HeadID: state.HeadID}

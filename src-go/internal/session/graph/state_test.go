@@ -46,6 +46,34 @@ func TestStateAutoCheckpointAdvancesCurrentBranchHead(t *testing.T) {
 	}
 }
 
+func TestStateReloadMainHeadIgnoresNamedBranchMetadata(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	user := mustMessage(t, "", "user", "hello")
+	assistant := mustMessage(t, user.ID, "assistant", "hi")
+	mainCheckpoint, err := model.NewCheckpoint(assistant.ID, "", assistant.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint main returned error: %v", err)
+	}
+	branchPointer, err := model.NewCheckpoint(mainCheckpoint.ID, "experiment", mainCheckpoint.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint branch returned error: %v", err)
+	}
+
+	state := NewState([]model.Entry{user, assistant, mainCheckpoint, branchPointer})
+
+	if state.Branches["main"].HeadID != mainCheckpoint.ID {
+		t.Fatalf("expected main head %q, got %#v", mainCheckpoint.ID, state.Branches["main"])
+	}
+	if state.HeadID != mainCheckpoint.ID {
+		t.Fatalf("expected current head %q, got %q", mainCheckpoint.ID, state.HeadID)
+	}
+	if state.Branches["experiment"].HeadID != mainCheckpoint.ID {
+		t.Fatalf("expected experiment head %q, got %#v", mainCheckpoint.ID, state.Branches["experiment"])
+	}
+}
+
 func TestStateCheckpointLabelsCurrentHeadWithBranch(t *testing.T) {
 	t.Parallel()
 
