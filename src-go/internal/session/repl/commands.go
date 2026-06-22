@@ -54,6 +54,10 @@ func ParseLine(line string) Command {
 }
 
 func ExecuteCommand(state *graph.State, command Command, out io.Writer) (Action, error) {
+	return ExecuteCommandWithStore(state, command, out, nil)
+}
+
+func ExecuteCommandWithStore(state *graph.State, command Command, out io.Writer, store CommandStore) (Action, error) {
 	switch command.Kind {
 	case CommandChat:
 		return ActionChat, nil
@@ -69,13 +73,23 @@ func ExecuteCommand(state *graph.State, command Command, out io.Writer) (Action,
 		}
 		return ActionContinue, nil
 	case CommandSwitch:
+		_, existed := state.Branches[command.Arg]
+		_, isHash := state.Entries[command.Arg]
 		if err := state.Switch(command.Arg); err != nil {
 			return ActionContinue, err
+		}
+		if !existed && !isHash {
+			if err := persistNamedCheckpoint(state, store, command.Arg); err != nil {
+				return ActionContinue, err
+			}
 		}
 		fmt.Fprintf(out, "switched to %s\n", command.Arg)
 		return ActionContinue, nil
 	case CommandCheckpoint:
 		if err := state.LabelCheckpoint(command.Arg); err != nil {
+			return ActionContinue, err
+		}
+		if err := persistNamedCheckpoint(state, store, command.Arg); err != nil {
 			return ActionContinue, err
 		}
 		fmt.Fprintf(out, "checkpoint %s -> %s\n", command.Arg, state.HeadID)

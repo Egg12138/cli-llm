@@ -198,6 +198,7 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 				State:  req.State,
 				Stdout: d.Stdout,
 				Stderr: d.Stderr,
+				Store:  req.Store,
 				Overlay: transcriptOverlay{
 					height: 20,
 				},

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/Egg12138/cli-llm/src-go/internal/session/graph"
+	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
 )
 
 type fakeReader struct {
@@ -61,6 +63,15 @@ func (o *fakeOverlay) Open(state *graph.State, out io.Writer) error {
 	return nil
 }
 
+type fakeCommandStore struct {
+	entries []model.Entry
+}
+
+func (s *fakeCommandStore) Append(entry model.Entry) error {
+	s.entries = append(s.entries, entry)
+	return nil
+}
+
 func TestREPLRunsChatLinesAndSlashCommands(t *testing.T) {
 	t.Parallel()
 
@@ -89,6 +100,49 @@ func TestREPLRunsChatLinesAndSlashCommands(t *testing.T) {
 	}
 	if !bytes.Contains(out.Bytes(), []byte("main")) {
 		t.Fatalf("expected branches output in stdout, got %q", out.String())
+	}
+}
+
+func TestREPLPersistsCheckpointAndNewBranchCommands(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	user, err := model.NewMessage("", "user", "hello", now)
+	if err != nil {
+		t.Fatalf("NewMessage user returned error: %v", err)
+	}
+	assistant, err := model.NewMessage(user.ID, "assistant", "hi", now)
+	if err != nil {
+		t.Fatalf("NewMessage assistant returned error: %v", err)
+	}
+	checkpoint, err := model.NewCheckpoint(assistant.ID, "", assistant.ID, now)
+	if err != nil {
+		t.Fatalf("NewCheckpoint returned error: %v", err)
+	}
+	state := graph.NewState([]model.Entry{user, assistant, checkpoint})
+	state.AutoCheckpoint(checkpoint)
+	store := &fakeCommandStore{}
+
+	code := Loop(LoopOptions{
+		Reader: &fakeReader{lines: []string{"/checkpoint baseline", "/switch experiment", "/exit"}},
+		Chat:   &fakeChatRunner{},
+		State:  state,
+		Stdout: &bytes.Buffer{},
+		Store:  store,
+	})
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if len(store.entries) != 2 {
+		t.Fatalf("expected two persisted command entries, got %#v", store.entries)
+	}
+	reloaded := graph.NewState(append([]model.Entry{user, assistant, checkpoint}, store.entries...))
+	if reloaded.Branches["baseline"].HeadID != checkpoint.ID {
+		t.Fatalf("expected baseline branch to reload at %q, got %#v", checkpoint.ID, reloaded.Branches["baseline"])
+	}
+	if reloaded.Branches["experiment"].HeadID != checkpoint.ID {
+		t.Fatalf("expected experiment branch to reload at %q, got %#v", checkpoint.ID, reloaded.Branches["experiment"])
 	}
 }
 

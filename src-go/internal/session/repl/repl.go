@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/Egg12138/cli-llm/src-go/internal/session/graph"
+	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
 )
 
 var ErrInterrupted = errors.New("interrupted")
@@ -45,6 +47,10 @@ type TranscriptOverlay interface {
 	Open(state *graph.State, out io.Writer) error
 }
 
+type CommandStore interface {
+	Append(entry model.Entry) error
+}
+
 type LoopOptions struct {
 	Reader  InputReader
 	Chat    ChatRunner
@@ -52,6 +58,7 @@ type LoopOptions struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Overlay TranscriptOverlay
+	Store   CommandStore
 }
 
 func Loop(opts LoopOptions) int {
@@ -82,7 +89,7 @@ func Loop(opts LoopOptions) int {
 			return 1
 		}
 		command := ParseLine(line)
-		action, err := ExecuteCommand(opts.State, command, out)
+		action, err := ExecuteCommandWithStore(opts.State, command, out, opts.Store)
 		if err != nil {
 			fmt.Fprintln(out, err)
 			continue
@@ -101,6 +108,20 @@ func Loop(opts LoopOptions) int {
 			}
 		}
 	}
+}
+
+func persistNamedCheckpoint(state *graph.State, store CommandStore, name string) error {
+	if store == nil || name == "" {
+		return nil
+	}
+	entry, err := model.NewCheckpoint(state.HeadID, name, state.HeadID, time.Now())
+	if err != nil {
+		return err
+	}
+	if err := store.Append(entry); err != nil {
+		return err
+	}
+	return state.AddEntry(entry)
 }
 
 func readInputEvent(reader InputReader, prompt string) InputEvent {

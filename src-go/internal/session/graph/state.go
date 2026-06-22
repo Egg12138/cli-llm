@@ -32,6 +32,16 @@ func NewState(entries []model.Entry) *State {
 	for _, entry := range entries {
 		_ = state.AddEntry(entry)
 		state.HeadID = entry.ID
+		if entry.Type == model.EntryTypeCheckpoint {
+			data, err := entry.CheckpointData()
+			if err == nil && data.Name != "" {
+				parent := state.CurrentBranch
+				if branch, ok := state.Branches[data.Name]; ok && branch.Parent != "" {
+					parent = branch.Parent
+				}
+				state.Branches[data.Name] = Branch{Name: data.Name, HeadID: data.ReturnTo, Parent: parent}
+			}
+		}
 	}
 	state.Branches["main"] = Branch{Name: "main", HeadID: state.HeadID}
 	return state
