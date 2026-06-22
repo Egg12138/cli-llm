@@ -140,6 +140,45 @@ func TestChatTurnPersistsCurrentBranchHead(t *testing.T) {
 	}
 }
 
+func TestChatTurnReportsStatusInOrder(t *testing.T) {
+	t.Parallel()
+
+	state := graph.NewState(nil)
+	store := &fakeAppendStore{}
+	chatModel := &fakeChatModel{chunks: []string{"hel", "lo"}}
+	var out bytes.Buffer
+	fake := &fakeStatusReporter{}
+
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:  "hi",
+		State:  state,
+		Store:  store,
+		Writer: &out,
+		Model:  chatModel,
+		Status: fake,
+		Now:    func() time.Time { return time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("RunChatTurn returned error: %v", err)
+	}
+
+	if len(fake.calls) < 3 {
+		t.Fatalf("expected at least 3 status calls, got %d: %v", len(fake.calls), fake.calls)
+	}
+	if fake.calls[0] != StatusThinking {
+		t.Fatalf("first status should be StatusThinking, got %v", fake.calls[0])
+	}
+	if fake.calls[1] != StatusWaitingStream {
+		t.Fatalf("second status should be StatusWaitingStream, got %v", fake.calls[1])
+	}
+	if fake.calls[2] != StatusStreaming {
+		t.Fatalf("third status should be StatusStreaming, got %v", fake.calls[2])
+	}
+	if !fake.clear {
+		t.Fatal("expected Clear() to be called")
+	}
+}
+
 func TestChatTurnFailedModelLeavesNoAssistantOrCheckpoint(t *testing.T) {
 	t.Parallel()
 

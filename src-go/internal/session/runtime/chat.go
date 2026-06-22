@@ -27,6 +27,7 @@ type ChatTurnRequest struct {
 	ModelName   string
 	Now         func() time.Time
 	OnTitle     func(TitleResult) error
+	Status      StatusReporter
 }
 
 func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
@@ -39,10 +40,17 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	if req.Model == nil {
 		return fmt.Errorf("chat model is required")
 	}
+	reporter := req.Status
+	if reporter == nil {
+		reporter = nopReporter{}
+	}
+	defer reporter.Clear()
+
 	now := time.Now
 	if req.Now != nil {
 		now = req.Now
 	}
+	reporter.Set(StatusThinking)
 	titleResult, err := ensureSessionTitle(ctx, req.State, req.Store, req.TitleModel, req.Input, now(), req.ModelName)
 	if err != nil {
 		return err
@@ -76,7 +84,9 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 		return err
 	}
 	defer stream.Close()
+	reporter.Set(StatusWaitingStream)
 
+	streamingReported := false
 	content := ""
 	for {
 		chunk, err := stream.Recv()
@@ -88,6 +98,10 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 		}
 		if chunk == nil || chunk.Content == "" {
 			continue
+		}
+		if !streamingReported {
+			reporter.Set(StatusStreaming)
+			streamingReported = true
 		}
 		content += chunk.Content
 		if req.Writer != nil {
