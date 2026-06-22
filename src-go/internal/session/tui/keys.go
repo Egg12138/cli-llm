@@ -7,4 +7,4 @@ const (
 	defaultHeight = 24
 )
 
-const footerHint = "↑/↓ select · PgUp/PgDn · Home/End · q quit"
+const footerHint = "↑/↓ select · PgUp/PgDn · Home/End · Tab branches · y copy · q quit"
