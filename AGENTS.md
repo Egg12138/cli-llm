@@ -90,9 +90,6 @@ Comment style: less comment. remains comment only for some public function doc s
 
 ### ❌ Not Yet Started
 
-- **Output-Control enhancements** (0.4.x) — Structured response objects, streaming-friendly formatting for automation pipelines.
-- **Extended Provider & Model Metadata** (0.4.x) — Richer config schema (capabilities, defaults per-provider), deeper model list introspection.
-- **Documentation & Release Readiness** (0.4.x) — `docs/` directory, release rehearsal, formal publishing prep.
 - **Rust Parity** (timing TBD) — Align Python and Go abstractions so a Rust reimplementation can reuse the same mental model.
 
 ### 🎯 Roadmap Decisions
@@ -108,6 +105,7 @@ The following were discussed and decided:
 | Rust Parity | **Hold** | Keep `src-rs/` tree dormant. No active Rust work; revisit when there's a clear need. |
 | Eino framework version | **High priority** | Use `src-go/` for a compose-first parity implementation. Keep ADK out of core UX until an agentic requirement is concrete. |
 | Config Schema Extension | **Not needed** | Current config structure is fine. Keep code extensible but don't expand schema proactively. |
+bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` plugin with git-like checkpoint model, branching, context compression, and `@`/`#` references. Leverage Eino's graph/state for checkpoint state machine. |
 
 ### Next milestones (tentative)
 
@@ -118,6 +116,23 @@ The following were discussed and decided:
 - [x] refactor `src-go` with Eino compose workflows and an isolated ADK learning spike
 - [ ] decide whether/when the Go runtime becomes an install target
 
+**0.4.0** (next track — multi-turn session mode, Go only)
+- [ ] `llm-session` plugin binary skeleton (reuse existing plugin dispatch)
+- [ ] Session persistence format (JSONL tree, id/parentId branching)
+- [ ] Git-like checkpoint model: auto-checkpoint after each turn, manual `/checkpoint <name>`
+- [ ] Branch topology data model (not dynamic traversal; pre-computed on checkpoint creation)
+- [ ] `/switch <target>` with tab completion: switch to existing node/branch, or create new branch
+- [ ] `/branches` — list all branches with topological view
+- [ ] `/export` — dump current branch full history to text file
+- [ ] `/new` — start a fresh session
+- [ ] Context compression: auto-trigger when token budget exceeded (Eino-managed summarization)
+- [ ] `@filename` file reference (with fuzzy completion) — inject content into context
+- [ ] `#head` / `#checkpoint` reference — jump to, diff against, or branch from
+- [ ] Bracketed paste mode: `[paste #1 +N lines]` markers → expand on submit
+- [ ] Simplified session system prompt (pi-inspired, no tool calls for v1)
+- [ ] Basic Eino Graph state machine for checkpoint transitions (not just linear chain)
+- [ ] Go-only: Python `src/` unchanged
+
 ---
 
 ## Guiding Principles
@@ -125,3 +140,227 @@ The following were discussed and decided:
 1. Keep changes scoped to the active milestone unless explicitly coordinated.
 2. Ensure documentation (README / AGENTS / CHANGELOG) stays aligned.
 3. Treat every internal build as if it might be published tomorrow.
+
+---
+
+## 0.4.0 Design Reference: `llm-session` Multi-Turn Agent Window
+
+### Overview
+
+`llm-session` is a new Go-only interactive session mode that treats conversation history as a **version-controlled graph** (git-like), not a linear chat. It leverages Eino's compose/Graph capabilities for checkpoint state machines, context compression, and branch management.
+
+**Go only** — Python `src/` is unchanged for 0.4.0. The feature ships as an `llm-session` binary plugin via the existing cargo-style plugin dispatch.
+
+**Session files:** stored in `~/.cli-llm/sessions/<name>.jsonl`. Each session is a single JSONL file, append-only (crash-safe).
+
+**Launch modes:**
+- `llm-session` (no flags) → start fresh session, prompt for name, go straight to first user message.
+- `llm-session --resume` → list existing sessions, user picks one. Resumes at the leaf entry.
+- `llm-session --resume <name>` → resume specific session non-interactively.
+
+**Exit:** `/exit` or Ctrl+D. Auto-saves on exit.
+
+**Compression:** auto-trigger at 200k tokens (`keepRecentTokens: 20000`). Uses the default model for both chat and compression (no separate model config in v1).
+
+**Model:** no override — uses whatever `~/.cli-llm/config.toml` defaults to.
+
+
+### v1 MVP Scope — Must Work End-to-End
+
+Only these items need to work for v1 to ship. Everything else is deferred to v1.1 / v2.
+
+| # | Item | Why it's critical |
+|---|------|-------------------|
+| 1 | **Session JSONL persistence** | The entire feature is a session file. Without it, nothing works. Append-only, `id`/`parentId` tree, entry type system. |
+| 2 | **`llm-session` binary** | Plugin entry point. Handles `--resume` / `--resume <name>` / fresh start. Reads config, loads session, enters REPL. |
+| 3 | **Chat REPL** | User types a message → sent to LLM → streaming response rendered → auto-checkpoint created → loop. No tool calls, no file refs, no paste markers. Just type and reply. |
+| 4 | **Auto-checkpoint after each turn** | Every assistant response creates a `custom:checkpoint` entry with the response's hash as `returnTo`. This is the git-commit equivalent — the backbone of branching. |
+| 5 | **`/switch <target>`** | Navigate to a hash (detached) or branch name. Unknown name → create new branch from current position. This is the core navigation primitive. |
+| 6 | **`/branches`** | List all branches with head hashes. Pre-computed topology, not dynamic tree walk. |
+| 7 | **`/checkpoint <name>`** | Labels the current node. Creates a named branch if one doesn't exist. |
+| 8 | **`/exit` (save)** | Write session to disk and exit. |
+| 9 | **Auto session titling** | Sub-request to LLM on first message, stores title in `session_info`. Makes `/resume` usable. |
+| 10 | **Context compression** | When token count exceeds 200k, summarize old entries into a `compaction` entry. Keeps the session usable for long conversations. |
+
+**Explicitly deferred:**
+- `/export` (can copy the JSONL file manually for now)
+- `/new` (exit + start fresh works)
+- `/rename` (minor UX polish)
+- `@filename` references (v2 with tool calls)
+- `#head` / `#checkpoint` references (v2)
+- Bracketed paste mode (v2)
+- Branch merge (v2)
+- Tab completion for `/switch` (bare hash/name entry is fine for v1)
+
+---
+
+### Data Model
+
+Session state is a JSONL tree (same structure as pi's session format):
+
+```
+┌────────┬───────────┬─────────────────────────┐
+│ Entry  │ id (hash) │ preview / name           │
+├────────┼───────────┼─────────────────────────┤
+│ Node   │ a1b2c3d4  │ "Write a React compo…"   │  ← first ~16 chars of user prompt
+│ Node   │ e5f6a7b8  │ "Can we use zod for…"     │
+│ Branch │ main      │ (current head: e5f6a7b8) │  ← only branches have names
+│ Node   │ c9d0e1f2  │ "Debug the schema…"       │
+│ Branch │ explore   │ (current head: c9d0e1f2) │
+└────────┴───────────┴─────────────────────────┘
+```
+
+**Key rules:**
+- **Every entry has an `id`** — a content-derived hash (SHA-256 truncated to 12 hex chars, like git short hashes). This hash is the `entryID` and never changes once created.
+- **Nodes have no names.** Their identity is their hash. In the tree view, each node is shown by its **preview**: the first ~16 characters of the user prompt that spawned it.
+- **Branches are the only named entities.** A branch is a mutable pointer to a head entry ID. `/switch <branchname>` moves the head. `/checkpoint <name>` labels the current node (retroactively), but the name is stored as branch metadata, not as part of the node entry.
+- **Tree navigation is parent-chain walking** (same pattern as pi-navigator): from any leaf, walk `parentId` links backward to root. No graph algorithms needed — the entry type system handles everything.
+
+**Entry types (minimum viable set):**
+
+| Entry type | id shape | data | purpose |
+|------------|----------|------|---------|
+| `message` (user) | hash | `{ role, content }` | User prompt. Drives node preview. |
+| `message` (assistant) | hash | `{ role, content }` | LLM response. |
+| `compaction` | hash | `{ summary, firstKeptEntryId, tokensBefore }` | Compressed old context. Same semantics as pi's `CompactionEntry`. |
+| `branch_summary` | hash | `{ summary, fromId }` | Injected when `/switch` leaves a branch. Same as pi's `BranchSummaryEntry`. |
+| `custom:checkpoint` | hash | `{ name?, returnTo }` | Anchor point for `/switch` and `/return`. Optional `name` labels the node for human reference. |
+| `custom:session_info` | hash | `{ title, created, model }` | Session-level metadata. Written once at session creation. |
+
+**Why this works (pi-navigator proof):** pi-navigator implements a full checkpoint/return/branch system with exactly 3 custom entry types (`checkpoint`, `task`, `task-done`) and parent-chain walking — no parallel processes, no graph algorithms, no subsystems. `llm-session` follows the same pattern: minimal entry types + tree walking + user-controlled navigation.
+
+
+**Auto session titling:** On the first user message (before the first assistant response), `llm-session` sends a lightweight sub-request to the LLM asking it to generate a short descriptive session title (≤60 chars, single line). The title is stored in the `SessionInfoEntry` of the session JSONL. The user can override with `/name <title>`.
+  - Rationale: unnamed sessions are hard to distinguish in `/resume`. Auto-titling from the first message gives immediate recognizability with zero user friction.
+  - Implementation: a separate Eino ChatModel invocation with a minimal prompt, using the default model. Result is saved before the main conversation flow begins.
+
+
+---
+
+### Session System Prompt (Simplified, v1 — No Tool Calls)
+
+Derived from pi coding-agent's system prompt template. Session mode v1 does not expose tool calls; all operations are context manipulation (file refs, node refs, slash commands) handled by the Go binary itself.
+
+```text
+You are an expert conversation assistant operating inside llm-session, a
+multi-turn session harness. The session uses a git-like checkpoint model
+where every response creates an automatic checkpoint you can branch from,
+switch to, or reference.
+
+Available references:
+- @<filename>     — Reference a file from the working directory (content
+                    injected into context on submit)
+- #<node|branch>  — Reference a checkpoint node or branch head (jump,
+                    diff, or branch from)
+
+Paste handling:
+- Large pastes (>10 lines or >1000 chars) are shown as
+  [paste #1 +123 lines] markers to keep the input area clean.
+  On submit, markers are expanded back to full content.
+- Small pastes are inlined directly.
+
+Guidelines:
+- Be concise in your responses.
+- Show checkpoint IDs and branch names clearly when referencing history.
+- Use @ and # references when the user mentions files or past checkpoints.
+- If the user asks about session internals (format, storage, commands),
+  answer from first principles — this is a custom implementation, not pi.
+
+Current date: {current_date}
+Session: {session_name}  |  branch: {branch_name}  |  head: {current_entry_hash}
+```
+
+**Future (v2+):** When tool calls are added, the template grows to include:
+
+```text
+Available tools:
+{tool list}
+
+Tool call rules:
+- Call at most one tool per turn.
+- Use only the provided tools.
+- Prefer read/grep/find/ls over bash for file inspection.
+- If no tool is needed, answer normally without a tool call.
+```
+
+---
+
+### Paste Handling (Bracketed Paste Mode)
+
+Reference: pi TUI editor's paste implementation.
+
+**Terminal layer:**
+- Terminal wraps pasted content in `\x1b[200~` (start) and `\x1b[201~` (end) — this is the bracketed paste mode sequence.
+- `llm-session` captures these sequences to distinguish paste from manual typing.
+
+**Input layer:**
+- On detecting `\x1b[200~`, enter paste mode: buffer all subsequent input in a `pasteBuffer` string.
+- On `\x1b[201~`, exit paste mode.
+
+**Processing:**
+- If paste content is small (≤10 lines and ≤1000 chars): inline it directly into the editor buffer.
+- If paste content is large: store the raw content in an in-memory `pastes: Map<number, string>`, and display a placeholder marker in the editor: `[paste #1 +123 lines]`
+- The marker is rendered as an atomic unit (cannot edit inside it; Delete/Backspace removes the whole marker).
+
+**On submit:**
+- Before sending to LLM, `expandPasteMarkers(text)` walks the input text, finds all `[paste #N ...]` markers, and replaces them with the stored raw content.
+- After submission, `pastes.clear()` to release memory.
+
+**Session persistence:**
+- The JSONL file stores markers as-is (`[paste #1 +123 lines]`) rather than raw content.
+- On session restore, pastes map is empty — markers remain but are inert. The user sees markers representing the original paste but cannot expand them (they would need to re-paste).
+- This is intentional: session files stay compact and don't bloat with large pasted content.
+
+---
+
+### Slash Commands (宁缺毋滥)
+
+| Command | Description |
+|---------|-------------|
+| `/export [file]` **(v1.1)** | Export current branch to a human-readable text file. Default filename: `session-{name}-{branch}.txt` |
+| `/new` **(v1.1)** | Start a fresh session. |
+| `/branches` | List all branches with head hashes and parent/child relationships. Reads pre-computed topology, not the full entry tree. |
+| `/switch <target>` | Navigate to a target:
+  - **Hash** (`a1b2c3d4`) → detach to that node (like `git checkout <hash>` — working tree is that commit, no branch).
+  - **Branch name** (`main`, `explore`) → switch to that branch's head.
+  - **Unknown name** → create a new branch forked from current position.
+ |
+| `/rename <branch> <new>` **(v1.1)** | Rename a branch. |
+| `/checkpoint <name>` | Label the current node with a human-readable name. Creates a named branch from the current position. |
+
+---
+
+### Eino's Role in Session Mode
+
+Unlike the current `chatflow`/`toolcallflow` which use a simple 2-node linear chain (Lambda → ChatModel), session mode needs a **stateful Graph** that models checkpoint transitions:
+
+```
+  ┌──────────────────────────────────────┐
+  │         Session State Machine        │
+  │                                      │
+  │  ┌──────────┐    ┌──────────────┐   │
+  │  │ ChatModel │◄───│ Checkpoint   │   │
+  │  │ (reply)   │───►│ Manager      │   │
+  │  └──────────┘    └──────┬───────┘   │
+  │                         │           │
+  │  ┌──────────────────────▼───────┐   │
+  │  │ Context Compression (Eino)   │   │
+  │  │ - Summarize old segments     │   │
+  │  │ - Store CompactionEntry      │   │
+  │  └──────────────────────────────┘   │
+  │                         │           │
+  │  ┌──────────────────────▼───────┐   │
+  │  │ Branch / Switch / Fork       │   │
+  │  │ (Eino state transition)     │   │
+  │  └──────────────────────────────┘   │
+  └──────────────────────────────────────┘
+```
+
+Eino capabilities used (beyond current linear compose):
+- **`compose.Graph` with state** — manage the session lifecycle as a state machine with explicit transitions between states (chatting, compressed, branched, switched).
+- **Multiple ChatModel nodes** — one for the main conversation, a second for compression summarization (different model/prompt).
+- **Conditional branching in the graph** — e.g., "if token budget exceeded → route through compressor node before returning response".
+- **Streaming through the graph** — user input → optional compression → checkpoint creation → chat model → response render. All as a single compiled graph.
+- The graph edges encode the session's checkpoint transition rules, making the flow explicit and testable.
+
+This is the first real use of Eino's graph capabilities beyond the minimal linear chain — precisely what makes Go the right home for this feature.
