@@ -3,6 +3,7 @@ package render
 import (
 	"bytes"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -52,6 +53,29 @@ func TestRenderMessagePropagatesMarkdownErrors(t *testing.T) {
 	})
 	if err == nil || err != io.ErrUnexpectedEOF {
 		t.Fatalf("expected markdown error, got %v", err)
+	}
+}
+
+func TestDefaultRenderMarkdownHighlightsFencedCodeBlocks(t *testing.T) {
+	content := "```go\nfmt.Println(\"hi\")\n```"
+
+	rendered, err := defaultRenderMarkdown(content)
+	if err != nil {
+		t.Fatalf("render fenced markdown: %v", err)
+	}
+
+	if rendered == content {
+		t.Fatalf("expected fenced code block to be rendered, got raw content")
+	}
+	if strings.Contains(rendered, "```go") {
+		t.Fatalf("expected rendered output without raw markdown fence, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "\x1b[") {
+		t.Fatalf("expected ANSI highlighted output, got %q", rendered)
+	}
+	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(rendered, "")
+	if !strings.Contains(plain, "fmt.Println") {
+		t.Fatalf("expected code content in rendered output, got %q", rendered)
 	}
 }
 

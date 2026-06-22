@@ -265,6 +265,7 @@ func runChatCommand(args []string) int {
 		fmt.Fprintf(commandStdout, "\nInput tokens: %d\n", result.Usage.InputTokens)
 		fmt.Fprintf(commandStdout, "Output tokens: %d\n", result.Usage.OutputTokens)
 		fmt.Fprintf(commandStdout, "Total tokens: %d\n", result.Usage.Total())
+		fmt.Fprintf(commandStdout, "Estimated cost: ~$%.4f\n", result.Usage.EstimatedCostUSD())
 	}
 	if result.Duration > 0 {
 		if !streamOutput {

@@ -41,6 +41,10 @@ func (u TokenUsage) Total() int {
 	return u.InputTokens + u.OutputTokens
 }
 
+func (u TokenUsage) EstimatedCostUSD() float64 {
+	return float64(u.InputTokens)*0.00001 + float64(u.OutputTokens)*0.00003
+}
+
 type ChatResult struct {
 	Text           string
 	RawText        string

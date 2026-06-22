@@ -78,7 +78,7 @@ func defaultRenderMarkdown(content string) (string, error) {
 
 func shouldRenderMarkdown(content string) bool {
 	if strings.Contains(content, "```") {
-		return false
+		return true
 	}
 
 	markers := []string{

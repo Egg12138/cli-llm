@@ -40,6 +40,7 @@ go test ./...
 go run ./cmd/llm --version
 go run ./cmd/llm inspect
 go test ./examples/chatmodel_agent -v
+go test ./internal/render -run '^$' -bench BenchmarkDefaultRenderMarkdown -benchmem
 ```
 
 Live provider calls require the same configuration keys as the Python runtime:

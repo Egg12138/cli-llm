@@ -386,6 +386,9 @@ func TestRunChatCommandDisplaysTokenUsageWhenEnabled(t *testing.T) {
 	if !strings.Contains(output, "Total tokens: 18") {
 		t.Fatalf("expected total token output, got %q", output)
 	}
+	if !strings.Contains(output, "Estimated cost: ~$0.0003") {
+		t.Fatalf("expected estimated cost output, got %q", output)
+	}
 	if len(runner.requests) != 1 || !runner.requests[0].CountTokens {
 		t.Fatalf("expected count-tokens request to be forwarded, got %#v", runner.requests)
 	}

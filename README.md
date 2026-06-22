@@ -83,6 +83,7 @@ export PATH="$HOME/.local/bin:$PATH"
 3. **Testing**
    - Run unit tests via `pytest`.
    - Run Go parity tests via `cd src-go && go test ./...`.
+   - Compare Python/Go output rendering via `python scripts/benchmark_output.py`.
 4. **Workflow**
    - Keep feature work scoped to the active roadmap milestone.
 - Update `AGENTS.md` + `CHANGELOG.md` whenever behavior or plans change.
