@@ -201,6 +201,57 @@ func TestStateBranchListAndReachableHistory(t *testing.T) {
 	}
 }
 
+func TestReachableFrom(t *testing.T) {
+	t.Parallel()
+
+	root := mustMessage(t, "", "user", "root")
+	mainLeaf := mustMessage(t, root.ID, "assistant", "main")
+	exploreLeaf := mustMessage(t, root.ID, "assistant", "explore")
+	state := NewState([]model.Entry{root, mainLeaf, exploreLeaf})
+	state.Branches["main"] = Branch{Name: "main", HeadID: mainLeaf.ID}
+	state.Branches["explore"] = Branch{Name: "explore", HeadID: exploreLeaf.ID, Parent: "main"}
+	state.CurrentBranch = "main"
+	state.HeadID = mainLeaf.ID
+
+	explore, err := state.ReachableFrom(exploreLeaf.ID)
+	if err != nil {
+		t.Fatalf("ReachableFrom explore returned error: %v", err)
+	}
+	if len(explore) != 2 || explore[0].ID != root.ID || explore[1].ID != exploreLeaf.ID {
+		t.Fatalf("expected root->explore chain, got %#v", explore)
+	}
+	for _, entry := range explore {
+		if entry.ID == mainLeaf.ID {
+			t.Fatalf("explore chain should not contain main leaf, got %#v", explore)
+		}
+	}
+
+	history, err := state.ReachableHistory()
+	if err != nil {
+		t.Fatalf("ReachableHistory returned error: %v", err)
+	}
+	fromHead, err := state.ReachableFrom(state.HeadID)
+	if err != nil {
+		t.Fatalf("ReachableFrom head returned error: %v", err)
+	}
+	if len(history) != len(fromHead) {
+		t.Fatalf("delegation mismatch: history=%#v fromHead=%#v", history, fromHead)
+	}
+	for i := range history {
+		if history[i].ID != fromHead[i].ID {
+			t.Fatalf("delegation mismatch at %d: history=%#v fromHead=%#v", i, history, fromHead)
+		}
+	}
+
+	empty, err := state.ReachableFrom("")
+	if err != nil {
+		t.Fatalf("ReachableFrom empty returned error: %v", err)
+	}
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("expected empty non-nil slice, got %#v", empty)
+	}
+}
+
 func mustMessage(t *testing.T, parentID, role, content string) model.Entry {
 	t.Helper()
 	entry, err := model.NewMessage(parentID, role, content, time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC))

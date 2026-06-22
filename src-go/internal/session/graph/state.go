@@ -127,12 +127,16 @@ func (s *State) ListBranches() []Branch {
 }
 
 func (s *State) ReachableHistory() ([]model.Entry, error) {
-	if s.HeadID == "" {
+	return s.ReachableFrom(s.HeadID)
+}
+
+func (s *State) ReachableFrom(headID string) ([]model.Entry, error) {
+	if headID == "" {
 		return []model.Entry{}, nil
 	}
 	var reversed []model.Entry
 	seen := map[string]struct{}{}
-	for id := s.HeadID; id != ""; {
+	for id := headID; id != ""; {
 		if _, ok := seen[id]; ok {
 			return nil, fmt.Errorf("cycle in parent chain at %s", id)
 		}
