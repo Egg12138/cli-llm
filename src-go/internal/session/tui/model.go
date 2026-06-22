@@ -114,8 +114,7 @@ func (m Model) handleBranchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnter:
 		m.previewSelectedBranch()
 	case tea.KeyEsc, tea.KeyCtrlT:
-		m.quitting = true
-		return m, tea.Quit
+		m.mode = modeScroll
 	case tea.KeyRunes:
 		if len(msg.Runes) == 1 && msg.Runes[0] == 'q' {
 			m.quitting = true
