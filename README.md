@@ -4,8 +4,8 @@ cli-llm is an internal command-line client for interacting with LLM providers.
 The project currently targets team workflows only; no public release is scheduled yet, but every change must keep the codebase publish-ready.
 
 ## Status
-- **Current train**: `0.3.x – Extensibility & UX`
-- **Latest milestone**: `0.3.0` (Agents Context Toggle, Renderer Upgrade, Plugin Framework, Go/Eino parity track)
+- **Current train**: `0.4.x – Advanced Provider & Release Prep`
+- **Latest milestone**: `0.4.0` (Go-only `llm-session` plugin, plugin dispatch wiring, install/docs sync, env-aware session runtime)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
@@ -21,7 +21,7 @@ The project currently targets team workflows only; no public release is schedule
 - Plugin Framework: cargo-style subcommand discovery via `llm-*` executables on PATH.
 - Go/Eino parity track: `src-go/` implements the current command surface with Eino compose workflows for `chat` and constrained `toolcall`, plus an isolated ADK learning example.
 
-### 0.4.x – Advanced Provider & Release Prep
+### 0.4.x – Advanced Provider & Release Prep ✅
 - Go-only `llm-session` plugin for persistent multi-turn sessions, checkpoints,
   branches, and resume.
 - Richer output-control pipelines for automation.
