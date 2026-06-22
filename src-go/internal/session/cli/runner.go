@@ -20,6 +20,7 @@ import (
 	sessionstore "github.com/Egg12138/cli-llm/src-go/internal/session/store"
 	sessiontui "github.com/Egg12138/cli-llm/src-go/internal/session/tui"
 	einomodel "github.com/cloudwego/eino/components/model"
+	"golang.org/x/term"
 )
 
 type SessionStore interface {
@@ -208,6 +209,13 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 		}
 	}
 	return d
+}
+
+func pickStatusReporter(out io.Writer) sessionruntime.StatusReporter {
+	if f, ok := out.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return sessionrepl.NewTTYReporter(out)
+	}
+	return &sessionrepl.PlainReporter{Out: out}
 }
 
 func generatedSessionName() string {
