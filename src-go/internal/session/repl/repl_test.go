@@ -219,3 +219,51 @@ func TestREPLTranscriptOverlayReturnsToNormalLoop(t *testing.T) {
 		t.Fatalf("expected chat after overlay, got %#v", chat.inputs)
 	}
 }
+
+func TestREPLSlashTOpensTranscriptOverlay(t *testing.T) {
+	t.Parallel()
+
+	reader := &fakeReader{lines: []string{"/t", "/exit"}}
+	chat := &fakeChatRunner{}
+	overlay := &fakeOverlay{}
+	state := graph.NewState(nil)
+	var out bytes.Buffer
+
+	code := Loop(LoopOptions{
+		Reader:  reader,
+		Chat:    chat,
+		State:   state,
+		Stdout:  &out,
+		Overlay: overlay,
+	})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if overlay.opens != 1 {
+		t.Fatalf("expected overlay to open once for /t, got %d", overlay.opens)
+	}
+}
+
+func TestREPLSlashTranscriptOpensOverlay(t *testing.T) {
+	t.Parallel()
+
+	reader := &fakeReader{lines: []string{"/transcript", "/exit"}}
+	chat := &fakeChatRunner{}
+	overlay := &fakeOverlay{}
+	state := graph.NewState(nil)
+	var out bytes.Buffer
+
+	code := Loop(LoopOptions{
+		Reader:  reader,
+		Chat:    chat,
+		State:   state,
+		Stdout:  &out,
+		Overlay: overlay,
+	})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if overlay.opens != 1 {
+		t.Fatalf("expected overlay to open once for /transcript, got %d", overlay.opens)
+	}
+}
