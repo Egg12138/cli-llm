@@ -129,8 +129,8 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 - [x] Go-only: Python `src/` unchanged
 - [ ] High priority: `/branches` should not display `head_id`; show only branch names/topology to save terminal space
 - [ ] High priority: slash commands need completion plus inline descriptions (`/branches`, `/switch`, `/checkpoint`, `/exit`, and future commands)
-- [ ] High priority: show dynamic status while the model is thinking/stream setup is pending, so users can distinguish blocked I/O, waiting for generation, and normal response streaming
-- [ ] **TUI for the Ctrl+T transcript overlay** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.
+- [x] High priority: show dynamic status while the model is thinking/stream setup is pending, so users can distinguish blocked I/O, waiting for generation, and normal response streaming
+- [x] **TUI for the Ctrl+T transcript overlay** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.
 - [ ] `/export` — dump current branch full history to text file
 - [ ] `/new` — start a fresh session
 - [ ] `@filename` file reference (with fuzzy completion) — inject content into context

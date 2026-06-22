@@ -6,6 +6,15 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+### Added
+- TUI transcript overlay (Ctrl+T) with Bubble Tea — branch-aware viewport, role/markdown highlighting, branch panel with switch-isolated preview, and copy-selected-dialog via OSC 52.
+- Main-buffer status indicator (thinking → waiting for stream → streaming) with animated TTY spinner and deterministic plain-text fallback for non-TTY mode.
+- Semantic color tokens (`AdaptiveColor`) in TUi styles, with `NO_COLOR` environment variable support.
+- Minimum terminal size check in the overlay with a clear "terminal too small" message.
+### Changed
+- Esc in the branch panel now returns to scroll mode instead of quitting the overlay.
+- Footer hint now shows `Tab` (branches) and `y` (copy) alongside navigation keys.
+
 ## [0.4.0] – Advanced Provider & Release Prep *(internal)*
 ### Added
 - `src-go/` Eino parity implementation covering layered config, prompt/AGENTS handling, OpenAI-compatible provider factory, compose-based `chat`, constrained `toolcall`, inspect/provider metadata commands, and cargo-style plugin dispatch.
