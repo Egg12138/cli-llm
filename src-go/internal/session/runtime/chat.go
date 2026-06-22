@@ -124,5 +124,17 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 		return err
 	}
 	req.State.AutoCheckpoint(checkpoint)
+	if req.State.CurrentBranch != "" && req.State.CurrentBranch != "main" {
+		branchCheckpoint, err := model.NewCheckpoint(checkpoint.ID, req.State.CurrentBranch, checkpoint.ID, now())
+		if err != nil {
+			return err
+		}
+		if err := req.Store.Append(branchCheckpoint); err != nil {
+			return err
+		}
+		if err := req.State.AddEntry(branchCheckpoint); err != nil {
+			return err
+		}
+	}
 	return nil
 }

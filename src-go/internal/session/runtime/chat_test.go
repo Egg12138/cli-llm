@@ -96,6 +96,40 @@ func TestChatTurnAppendsUserAssistantAndCheckpoint(t *testing.T) {
 	}
 }
 
+func TestChatTurnPersistsCurrentBranchHead(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	root, err := model.NewMessage("", "user", "root", now)
+	if err != nil {
+		t.Fatalf("NewMessage returned error: %v", err)
+	}
+	state := graph.NewState([]model.Entry{root})
+	if err := state.Switch("experiment"); err != nil {
+		t.Fatalf("Switch returned error: %v", err)
+	}
+	store := &fakeAppendStore{}
+	chatModel := &fakeChatModel{chunks: []string{"branch answer"}}
+
+	err = RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:      "continue branch",
+		State:      state,
+		Store:      store,
+		Writer:     &bytes.Buffer{},
+		Model:      chatModel,
+		TitleModel: nil,
+		Now:        func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("RunChatTurn returned error: %v", err)
+	}
+
+	reloaded := graph.NewState(append([]model.Entry{root}, store.entries...))
+	if reloaded.Branches["experiment"].HeadID != state.HeadID {
+		t.Fatalf("expected experiment to reload at %q, got %#v", state.HeadID, reloaded.Branches["experiment"])
+	}
+}
+
 func TestChatTurnFailedModelLeavesNoAssistantOrCheckpoint(t *testing.T) {
 	t.Parallel()
 
