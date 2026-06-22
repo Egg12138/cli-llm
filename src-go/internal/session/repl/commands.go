@@ -11,20 +11,22 @@ import (
 type CommandKind string
 
 const (
-	CommandChat       CommandKind = "chat"
-	CommandExit       CommandKind = "exit"
-	CommandBranches   CommandKind = "branches"
-	CommandSwitch     CommandKind = "switch"
-	CommandCheckpoint CommandKind = "checkpoint"
-	CommandUnknown    CommandKind = "unknown"
+	CommandChat        CommandKind = "chat"
+	CommandExit        CommandKind = "exit"
+	CommandBranches    CommandKind = "branches"
+	CommandSwitch      CommandKind = "switch"
+	CommandCheckpoint  CommandKind = "checkpoint"
+	CommandTranscript  CommandKind = "transcript"
+	CommandUnknown     CommandKind = "unknown"
 )
 
 type Action string
 
 const (
-	ActionContinue Action = "continue"
-	ActionChat     Action = "chat"
-	ActionExit     Action = "exit"
+	ActionContinue   Action = "continue"
+	ActionChat       Action = "chat"
+	ActionExit       Action = "exit"
+	ActionTranscript Action = "transcript"
 )
 
 type Command struct {
@@ -48,6 +50,8 @@ func ParseLine(line string) Command {
 		return Command{Kind: CommandSwitch, Arg: strings.TrimSpace(arg), Line: line}
 	case "/checkpoint":
 		return Command{Kind: CommandCheckpoint, Arg: strings.TrimSpace(arg), Line: line}
+	case "/t", "/transcript":
+		return Command{Kind: CommandTranscript, Line: line}
 	default:
 		return Command{Kind: CommandUnknown, Arg: strings.TrimPrefix(name, "/"), Line: line}
 	}
@@ -66,9 +70,9 @@ func ExecuteCommandWithStore(state *graph.State, command Command, out io.Writer,
 	case CommandBranches:
 		for _, branch := range state.ListBranches() {
 			if branch.Parent != "" {
-				fmt.Fprintf(out, "%s %s parent=%s\n", branch.Name, branch.HeadID, branch.Parent)
+				fmt.Fprintf(out, "%s (from %s)\n", branch.Name, branch.Parent)
 			} else {
-				fmt.Fprintf(out, "%s %s\n", branch.Name, branch.HeadID)
+				fmt.Fprintf(out, "%s\n", branch.Name)
 			}
 		}
 		return ActionContinue, nil
@@ -94,6 +98,8 @@ func ExecuteCommandWithStore(state *graph.State, command Command, out io.Writer,
 		}
 		fmt.Fprintf(out, "checkpoint %s -> %s\n", command.Arg, state.HeadID)
 		return ActionContinue, nil
+	case CommandTranscript:
+		return ActionTranscript, nil
 	case CommandUnknown:
 		fmt.Fprintf(out, "unknown command: /%s\n", command.Arg)
 		return ActionContinue, nil

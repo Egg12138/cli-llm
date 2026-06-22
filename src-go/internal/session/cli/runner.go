@@ -272,7 +272,7 @@ func (r *lineReader) ReadEvent(prompt string) sessionrepl.InputEvent {
 	if err != nil {
 		return sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Err: err}
 	}
-	if line == "\x14" {
+	if strings.Contains(line, "\x14") {
 		return sessionrepl.InputEvent{Kind: sessionrepl.EventTranscript}
 	}
 	return sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: line}

@@ -97,6 +97,13 @@ func Loop(opts LoopOptions) int {
 		switch action {
 		case ActionExit:
 			return 0
+		case ActionTranscript:
+			if opts.Overlay != nil {
+				if err := opts.Overlay.Open(opts.State, out); err != nil {
+					fmt.Fprintln(out, err)
+					return 1
+				}
+			}
 		case ActionChat:
 			if opts.Chat == nil {
 				fmt.Fprintln(out, "chat runner is not configured")

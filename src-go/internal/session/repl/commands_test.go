@@ -73,8 +73,8 @@ func TestSlashCommandEffects(t *testing.T) {
 	if _, err := ExecuteCommand(state, ParseLine("/branches"), &out); err != nil {
 		t.Fatalf("branches: %v", err)
 	}
-	if output := out.String(); !strings.Contains(output, "main") || !strings.Contains(output, head.ID) {
-		t.Fatalf("branches output missing main head: %q", output)
+	if output := out.String(); !strings.Contains(output, "main") {
+		t.Fatalf("branches output missing main: %q", output)
 	}
 
 	if _, err := ExecuteCommand(state, ParseLine("/switch old"), &out); err != nil {
