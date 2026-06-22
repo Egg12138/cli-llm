@@ -3,6 +3,7 @@ package tui
 import (
 	"io"
 	"strings"
+	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -190,6 +191,9 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
+	if m.cfg.Width < minWidth || m.cfg.Height < minHeight {
+		return terminalTooSmall(m.cfg.Width, m.cfg.Height)
+	}
 	var b strings.Builder
 	b.WriteString(m.renderHeader())
 	b.WriteByte('\n')
@@ -284,4 +288,8 @@ func maxOffset(total, h int) int {
 
 func clampOffset(o, mx int) int {
 	return max(0, min(o, mx))
+}
+
+func terminalTooSmall(width, height int) string {
+	return fmt.Sprintf("terminal too small: %d×%d (need %d×%d)", width, height, minWidth, minHeight)
 }

@@ -243,3 +243,22 @@ func TestModelClipboardCopiesSelectedRawDialog(t *testing.T) {
 		t.Fatalf("clipboard output copied unselected entry: %q", out)
 	}
 }
+
+func TestModelTerminalTooSmall(t *testing.T) {
+	m := New(Config{History: entries(3), Width: 40, Height: 5})
+	v := m.View()
+	if !strings.Contains(v, "terminal too small") {
+		t.Fatalf("expected 'terminal too small' for 40x5, got: %q", v)
+	}
+	if !strings.Contains(v, "40×5") {
+		t.Fatalf("expected dimensions 40x5 in message, got: %q", v)
+	}
+}
+
+func TestModelTerminalNormalWidthMinHeight(t *testing.T) {
+	m := New(Config{History: entries(3), Width: 80, Height: 8})
+	v := m.View()
+	if strings.Contains(v, "terminal too small") {
+		t.Fatalf("80x8 should be normal (minHeight=8, so this is below), got: %q", v)
+	}
+}
