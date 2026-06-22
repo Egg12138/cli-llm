@@ -11,6 +11,11 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+type TitleResult struct {
+	Title   string
+	Created bool
+}
+
 func NormalizeTitle(title, fallback string) string {
 	line := firstLine(strings.TrimSpace(title))
 	if line == "" {
@@ -19,32 +24,36 @@ func NormalizeTitle(title, fallback string) string {
 	return firstRunes(line, 60)
 }
 
-func ensureSessionTitle(ctx context.Context, state *graph.State, store AppendStore, titleModel einomodel.BaseChatModel, firstPrompt string, now time.Time, configuredModel string) error {
+func ensureSessionTitle(ctx context.Context, state *graph.State, store AppendStore, titleModel einomodel.BaseChatModel, firstPrompt string, now time.Time, configuredModel string) (TitleResult, error) {
 	if titleModel == nil || hasSessionInfo(state) {
-		return nil
+		return TitleResult{}, nil
 	}
 	response, err := titleModel.Generate(ctx, []*schema.Message{
 		schema.UserMessage("Generate a short descriptive title for this session.\nReturn one line, at most 60 characters.\n\nUser message:\n" + firstPrompt),
 	})
 	if err != nil {
-		return err
+		return TitleResult{}, err
 	}
 	rawTitle := ""
 	if response != nil {
 		rawTitle = response.Content
 	}
+	title := NormalizeTitle(rawTitle, firstPrompt)
 	infoEntry, err := model.NewSessionInfo("", model.SessionInfo{
-		Title:   NormalizeTitle(rawTitle, firstPrompt),
+		Title:   title,
 		Created: now,
 		Model:   configuredModel,
 	}, now)
 	if err != nil {
-		return err
+		return TitleResult{}, err
 	}
 	if err := store.Append(infoEntry); err != nil {
-		return err
+		return TitleResult{}, err
 	}
-	return state.AddEntry(infoEntry)
+	if err := state.AddEntry(infoEntry); err != nil {
+		return TitleResult{}, err
+	}
+	return TitleResult{Title: title, Created: true}, nil
 }
 
 func hasSessionInfo(state *graph.State) bool {

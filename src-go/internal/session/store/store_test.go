@@ -116,6 +116,77 @@ func TestStoreLoadMissingFileReturnsEmptyEntries(t *testing.T) {
 	}
 }
 
+func TestStoreRenameMovesSessionFileAndKeepsAppending(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := Open(root, "session-temp")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	first, err := model.NewMessage("", "user", "hello", now)
+	if err != nil {
+		t.Fatalf("NewMessage returned error: %v", err)
+	}
+	if err := store.Append(first); err != nil {
+		t.Fatalf("append first: %v", err)
+	}
+
+	if err := store.Rename("useful-title"); err != nil {
+		t.Fatalf("Rename returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "session-temp.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("expected old session file to be moved, stat err=%v", err)
+	}
+	if store.Path() != filepath.Join(root, "useful-title.jsonl") {
+		t.Fatalf("unexpected renamed path %q", store.Path())
+	}
+
+	second, err := model.NewMessage(first.ID, "assistant", "hi", now)
+	if err != nil {
+		t.Fatalf("NewMessage returned error: %v", err)
+	}
+	if err := store.Append(second); err != nil {
+		t.Fatalf("append second: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("expected both entries in renamed file, got %#v", loaded)
+	}
+}
+
+func TestNameFromTitleCreatesSafeSessionName(t *testing.T) {
+	t.Parallel()
+
+	if got := NameFromTitle("Useful Session: Checkpoints / Branches"); got != "useful-session-checkpoints-branches" {
+		t.Fatalf("unexpected name %q", got)
+	}
+	if got := NameFromTitle(" \n "); got != "session" {
+		t.Fatalf("expected fallback name, got %q", got)
+	}
+}
+
+func TestStoreAvailableNameAvoidsExistingSessionFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := Open(root, "session-temp")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "useful-title.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write existing session: %v", err)
+	}
+
+	if got := store.AvailableName("Useful Title"); got != "useful-title-2" {
+		t.Fatalf("expected conflict suffix, got %q", got)
+	}
+}
+
 func TestStoreRejectsUnsafeSessionNames(t *testing.T) {
 	t.Parallel()
 

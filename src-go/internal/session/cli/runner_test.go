@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 type fakeSessionStore struct {
 	entries []model.Entry
 	missing bool
+	renamed string
 }
 
 func mustRunnerMessage(t *testing.T, parentID, role, content string) model.Entry {
@@ -40,6 +42,11 @@ func (s *fakeSessionStore) Append(entry model.Entry) error {
 	return nil
 }
 
+func (s *fakeSessionStore) Rename(name string) error {
+	s.renamed = name
+	return nil
+}
+
 type fakeProviderModel struct {
 	model string
 }
@@ -56,17 +63,50 @@ func TestRunnerFreshPromptsForNameAndStartsREPL(t *testing.T) {
 	t.Parallel()
 
 	deps := fakeRunnerDeps(t)
-	deps.PromptNameFunc = func() (string, error) { return "work", nil }
+	deps.PromptNameFunc = func() (string, error) {
+		t.Fatalf("fresh session should not prompt for a session name")
+		return "", nil
+	}
 	runner := NewRunner(deps.RunnerDeps)
 
 	if err := runner.Run(Options{Mode: ModeFresh}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if deps.openedName != "work" {
-		t.Fatalf("expected store name work, got %q", deps.openedName)
+	if !strings.HasPrefix(deps.openedName, "session-") {
+		t.Fatalf("expected generated temporary session name, got %q", deps.openedName)
 	}
 	if deps.started == nil || deps.started.CurrentBranch != "main" {
 		t.Fatalf("expected repl state, got %#v", deps.started)
+	}
+}
+
+func TestRunnerFreshRenamesSessionFromGeneratedTitle(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeSessionStore{}
+	out := &strings.Builder{}
+	deps := RunnerDeps{
+		Config: config.AppConfig{DefaultModel: "gpt-4o-mini"},
+		OpenStoreFunc: func(name string) (SessionStore, error) {
+			return store, nil
+		},
+		NewModelFunc: func(cfg config.AppConfig) (einomodel.BaseChatModel, error) {
+			return &fakeProviderModel{model: cfg.DefaultModel}, nil
+		},
+		Stdin:  strings.NewReader("hello world\n"),
+		Stdout: out,
+		Stderr: io.Discard,
+	}
+	runner := NewRunner(deps)
+
+	if err := runner.Run(Options{Mode: ModeFresh}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if store.renamed != "title" {
+		t.Fatalf("expected generated title to become session name, got %q", store.renamed)
+	}
+	if strings.Contains(out.String(), "session name:") {
+		t.Fatalf("fresh session prompted for a name: %q", out.String())
 	}
 }
 

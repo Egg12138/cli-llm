@@ -15,9 +15,6 @@ func TestBuildContextIncludesSessionSystemPrompt(t *testing.T) {
 
 	state := graph.NewState(nil)
 	messages, err := BuildMessages(*state, ContextOptions{
-		SessionName: "work",
-		BranchName:  "main",
-		HeadID:      "abc123",
 		CurrentDate: "2026-06-22",
 	})
 	if err != nil {
@@ -30,9 +27,14 @@ func TestBuildContextIncludesSessionSystemPrompt(t *testing.T) {
 	if system.Role != schema.System {
 		t.Fatalf("expected system role, got %v", system.Role)
 	}
-	for _, want := range []string{"2026-06-22", "Session: work", "branch: main", "head: abc123"} {
+	for _, want := range []string{"2026-06-22"} {
 		if !strings.Contains(system.Content, want) {
 			t.Fatalf("system prompt missing %q: %s", want, system.Content)
+		}
+	}
+	for _, forbidden := range []string{"Session:", "branch:", "head:", "work", "main", "abc123"} {
+		if strings.Contains(system.Content, forbidden) {
+			t.Fatalf("system prompt leaked session state %q: %s", forbidden, system.Content)
 		}
 	}
 }
@@ -52,7 +54,7 @@ func TestBuildContextConvertsReachableMessagesAndSkipsCheckpoints(t *testing.T) 
 	state.HeadID = checkpoint.ID
 	state.Branches["main"] = graph.Branch{Name: "main", HeadID: checkpoint.ID}
 
-	messages, err := BuildMessages(*state, ContextOptions{SessionName: "work", BranchName: "main"})
+	messages, err := BuildMessages(*state, ContextOptions{})
 	if err != nil {
 		t.Fatalf("BuildMessages returned error: %v", err)
 	}
@@ -100,7 +102,7 @@ func TestBuildContextIncludesReachableSummaries(t *testing.T) {
 	state := graph.NewState([]model.Entry{compaction, branchSummary, user, unreachableSummary})
 	state.HeadID = user.ID
 
-	messages, err := BuildMessages(*state, ContextOptions{SessionName: "work", BranchName: "main"})
+	messages, err := BuildMessages(*state, ContextOptions{})
 	if err != nil {
 		t.Fatalf("BuildMessages returned error: %v", err)
 	}

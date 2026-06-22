@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Egg12138/cli-llm/src-go/internal/config"
 	"github.com/Egg12138/cli-llm/src-go/internal/providers"
@@ -23,6 +24,7 @@ import (
 
 type SessionStore interface {
 	Load() ([]model.Entry, error)
+	Rename(name string) error
 	sessionruntime.AppendStore
 }
 
@@ -96,7 +98,7 @@ func (r SessionRunner) Run(options Options) error {
 func (r SessionRunner) resolveName(options Options) (string, error) {
 	switch options.Mode {
 	case ModeFresh:
-		return r.deps.PromptNameFunc()
+		return generatedSessionName(), nil
 	case ModeResumeNamed:
 		return options.Name, nil
 	case ModeResumePicker:
@@ -122,7 +124,11 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	}
 	if d.OpenStoreFunc == nil {
 		d.OpenStoreFunc = func(name string) (SessionStore, error) {
-			return sessionstore.Open(sessionstore.DefaultRoot(), name)
+			store, err := sessionstore.Open(sessionstore.DefaultRoot(), name)
+			if err != nil {
+				return nil, err
+			}
+			return &store, nil
 		}
 	}
 	if d.NewModelFunc == nil {
@@ -160,6 +166,7 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	}
 	if d.StartREPLFunc == nil {
 		d.StartREPLFunc = func(req StartREPLRequest) error {
+			sessionName := req.Name
 			runner := sessionrepl.ChatRunner(chatRunnerFunc(func(input string) error {
 				return sessionruntime.RunChatTurn(context.Background(), sessionruntime.ChatTurnRequest{
 					Input:       input,
@@ -168,8 +175,21 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 					Writer:      d.Stdout,
 					Model:       req.Model,
 					TitleModel:  req.Model,
-					SessionName: req.Name,
+					SessionName: sessionName,
 					ModelName:   req.Config.DefaultModel,
+					OnTitle: func(result sessionruntime.TitleResult) error {
+						nextName := sessionstore.NameFromTitle(result.Title)
+						if concrete, ok := req.Store.(interface {
+							AvailableName(string) string
+						}); ok {
+							nextName = concrete.AvailableName(result.Title)
+						}
+						if err := req.Store.Rename(nextName); err != nil {
+							return err
+						}
+						sessionName = nextName
+						return nil
+					},
 				})
 			}))
 			code := sessionrepl.Loop(sessionrepl.LoopOptions{
@@ -189,6 +209,10 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 		}
 	}
 	return d
+}
+
+func generatedSessionName() string {
+	return fmt.Sprintf("session-%d-%d", time.Now().UTC().UnixNano(), os.Getpid())
 }
 
 func defaultListSessions() ([]SessionSummary, error) {

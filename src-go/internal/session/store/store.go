@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
 )
@@ -44,6 +45,67 @@ func Open(root, name string) (Store, error) {
 
 func (s Store) Path() string {
 	return s.path
+}
+
+func (s *Store) Rename(name string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+	target := filepath.Join(s.root, name+".jsonl")
+	if target == s.path {
+		return nil
+	}
+	if err := os.Rename(s.path, target); err != nil {
+		return err
+	}
+	s.name = name
+	s.path = target
+	return nil
+}
+
+func NameFromTitle(title string) string {
+	var builder strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(title)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash && builder.Len() > 0 {
+			builder.WriteByte('-')
+			lastDash = true
+		}
+	}
+	name := strings.Trim(builder.String(), "-")
+	if name == "" {
+		return "session"
+	}
+	runes := []rune(name)
+	if len(runes) > 48 {
+		name = strings.Trim(string(runes[:48]), "-")
+	}
+	if name == "" {
+		return "session"
+	}
+	return name
+}
+
+func (s Store) AvailableName(base string) string {
+	name := NameFromTitle(base)
+	for i := 1; ; i++ {
+		candidate := name
+		if i > 1 {
+			candidate = fmt.Sprintf("%s-%d", name, i)
+		}
+		path := filepath.Join(s.root, candidate+".jsonl")
+		if path == s.path {
+			return candidate
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
 
 func (s Store) Append(entry model.Entry) error {

@@ -26,6 +26,7 @@ type ChatTurnRequest struct {
 	SessionName string
 	ModelName   string
 	Now         func() time.Time
+	OnTitle     func(TitleResult) error
 }
 
 func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
@@ -42,8 +43,14 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	if req.Now != nil {
 		now = req.Now
 	}
-	if err := ensureSessionTitle(ctx, req.State, req.Store, req.TitleModel, req.Input, now(), req.ModelName); err != nil {
+	titleResult, err := ensureSessionTitle(ctx, req.State, req.Store, req.TitleModel, req.Input, now(), req.ModelName)
+	if err != nil {
 		return err
+	}
+	if titleResult.Created && req.OnTitle != nil {
+		if err := req.OnTitle(titleResult); err != nil {
+			return err
+		}
 	}
 
 	userEntry, err := model.NewMessage(req.State.HeadID, "user", req.Input, now())
@@ -59,9 +66,6 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	req.State.SetHead(userEntry.ID)
 
 	messages, err := BuildMessages(*req.State, ContextOptions{
-		SessionName: req.SessionName,
-		BranchName:  req.State.CurrentBranch,
-		HeadID:      req.State.HeadID,
 		CurrentDate: now().Format("2006-01-02"),
 	})
 	if err != nil {

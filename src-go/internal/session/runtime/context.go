@@ -9,9 +9,6 @@ import (
 )
 
 type ContextOptions struct {
-	SessionName string
-	BranchName  string
-	HeadID      string
 	CurrentDate string
 }
 
@@ -54,25 +51,11 @@ func BuildMessages(state graph.State, opts ContextOptions) ([]*schema.Message, e
 }
 
 func systemPrompt(opts ContextOptions) string {
-	sessionName := opts.SessionName
-	if sessionName == "" {
-		sessionName = "unnamed"
-	}
-	branchName := opts.BranchName
-	if branchName == "" {
-		branchName = "detached"
-	}
-	headID := opts.HeadID
-	if headID == "" {
-		headID = "none"
-	}
-	return fmt.Sprintf(`You are an expert conversation assistant operating inside llm-session, a multi-turn session harness. The session uses a git-like checkpoint model where every response creates an automatic checkpoint you can branch from or switch to.
+	return fmt.Sprintf(`You are an expert conversation assistant operating inside llm-session, a multi-turn session harness. Session checkpoints and branches are managed locally outside the model context.
 
 Guidelines:
 - Be concise in your responses.
-- Show checkpoint IDs and branch names clearly when referencing history.
 - If the user asks about session internals, answer from first principles.
 
-Current date: %s
-Session: %s  |  branch: %s  |  head: %s`, opts.CurrentDate, sessionName, branchName, headID)
+Current date: %s`, opts.CurrentDate)
 }
