@@ -9,3 +9,4 @@ __pycache__
 *.egg-info/
 .pi/
 llm_bash.sh
+/src-go/llm

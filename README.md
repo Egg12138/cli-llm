@@ -5,8 +5,8 @@ The project currently targets team workflows only; no public release is schedule
 
 ## Status
 - **Current train**: `0.3.x – Extensibility & UX`
-- **Latest milestone**: `0.3.0` (Agents Context Toggle, Renderer Upgrade, Plugin Framework)
-- **Python** is the only actively supported implementation today. Rust remains in the repo for future parity work.
+- **Latest milestone**: `0.3.0` (Agents Context Toggle, Renderer Upgrade, Plugin Framework, Go/Eino parity track)
+- **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
 
@@ -19,6 +19,7 @@ The project currently targets team workflows only; no public release is schedule
 - Agents Context Toggle: `--agents-context` flag reads `./AGENTS.md` into system prompt.
 - Renderer Upgrade: `rich` + `markdown-it-py` for syntax-highlighted code blocks and proper markdown rendering.
 - Plugin Framework: cargo-style subcommand discovery via `llm-*` executables on PATH.
+- Go/Eino parity track: `src-go/` implements the current command surface with Eino compose workflows for `chat` and constrained `toolcall`, plus an isolated ADK learning example.
 
 ### 0.4.x – Advanced Provider & Release Prep
 - Richer output-control pipelines for automation.
@@ -81,6 +82,7 @@ export PATH="$HOME/.local/bin:$PATH"
    - Type-check with `mypy src`.
 3. **Testing**
    - Run unit tests via `pytest`.
+   - Run Go parity tests via `cd src-go && go test ./...`.
 4. **Workflow**
    - Keep feature work scoped to the active roadmap milestone.
 - Update `AGENTS.md` + `CHANGELOG.md` whenever behavior or plans change.
@@ -112,7 +114,7 @@ models = ["deepseek-chat", "deepseek-coder"]
 Select a provider via config, `CLI_LLM_PROVIDER`, or the `--provider` flag. Only the `openai` provider is wired today, but other profiles can be declared for forward compatibility.
 
 ### Provider discovery helpers
-- `llm providers` – show every loadable provider profile after merging defaults, config, and environment data.
+- `llm inspect` – show every loadable provider profile after merging defaults, config, and environment data.
 - `llm provider models [name]` – print the models declared for a profile (defaults to the active provider when omitted). Use `--json` on either command for machine-readable output.
 
 ## Plugin Guide
@@ -217,7 +219,9 @@ Plugins named `llm-chat`, `llm-inspect`, `llm-provider`, or `llm-toolcall` are i
 
 ## Repository Layout
 - `src/cli_llm/` – Python CLI package (modernised in 0.2.x).
-- `rust/` – Rust prototype (development resumes when the roadmap calls for it).
+- `src-go/` – Go/Eino parity implementation and learning examples.
+- `src-rs/` – Rust prototype (development resumes when the roadmap calls for it).
+- `docs/plans/` – implementation plans for active migration work.
 - `AGENTS.md` – Full plan + requirements for other agents and automations.
 
 ## Contributing

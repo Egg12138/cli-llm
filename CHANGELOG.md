@@ -5,6 +5,13 @@ The format roughly follows [Keep a Changelog](https://keepachangelog.com/) and u
 Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
+### Added
+- `src-go/` Eino parity implementation covering layered config, prompt/AGENTS handling, OpenAI-compatible provider factory, compose-based `chat`, constrained `toolcall`, inspect/provider metadata commands, and cargo-style plugin dispatch.
+- Isolated `src-go/examples/chatmodel_agent` ADK learning spike with a deterministic local tool example.
+- Go parity documentation at `src-go/README.md` and implementation plan at `docs/plans/2026-06-22-eino-reimplementation.md`.
+
+### Changed
+- Plugin dispatch resolution in the Go implementation now lives in `internal/plugins` and is covered by dedicated tests.
 
 ## [0.3.0] – Extensibility & UX *(internal)*
 ### Added

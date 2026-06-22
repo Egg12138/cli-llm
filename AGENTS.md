@@ -10,7 +10,7 @@ Comment style: less comment. remains comment only for some public function doc s
 
 ## High-Level Goals
 
-- Maintain parallel Python + Rust structure, yet **keep the Python implementation as the primary focus until we explicitly schedule Rust work**. Keep interfaces aligned so a future Rust push can happen without major redesign.
+- Maintain parallel Python + Go + Rust structure. **Keep the Python implementation as the primary supported runtime** until the Go/Eino parity track is explicitly promoted. Keep interfaces aligned so future Rust work can happen without major redesign.
 - Prioritise developer experience: editable installs, modern packaging, fast iteration, reproducible environments.
 - Keep code Pythonic with strong typing, modular architecture, and solid test coverage so experimental features graduate safely.
 
@@ -79,20 +79,21 @@ Comment style: less comment. remains comment only for some public function doc s
     Cargo-style subcommand discovery: unknown subcommands trigger a PATH search for `llm-<subcommand>` executables. If found, the process is replaced via `os.execvp`. Framework only — no bundled plugins.
 
 
-15. **EINO version** (0.3.0)  
-   implement this project using eino
+15. **Go/Eino parity track** (0.3.0)  
+   `src-go/` now contains an Eino-based implementation of the current command surface. The core runtime stays compose-first for deterministic `chat` and constrained `toolcall`; ADK is isolated to a learning example until a real agentic product mode is scheduled.
 
 
 ### 🔄 Partially Done / In Progress
 
 - **CLI Options Overhaul** (2.D) — Flags exist (`--provider`, `--role`, `--model`, `--input-mode`, etc.) and have help text, but some legacy flags remain (`--localtest`), and flag naming hasn't been fully audited per the 2.D spec.
+- **Go/Eino runtime promotion** — `src-go/` has parity coverage for config, prompts, provider factory, chat, toolcall, inspect/provider metadata, plugin dispatch, and an ADK spike. It still needs packaging/install integration and live-provider release rehearsal before replacing Python.
 
 ### ❌ Not Yet Started
 
 - **Output-Control enhancements** (0.4.x) — Structured response objects, streaming-friendly formatting for automation pipelines.
 - **Extended Provider & Model Metadata** (0.4.x) — Richer config schema (capabilities, defaults per-provider), deeper model list introspection.
 - **Documentation & Release Readiness** (0.4.x) — `docs/` directory, release rehearsal, formal publishing prep.
-- **Rust Parity** (timing TBD) — Align Python abstractions so a Rust reimplementation can reuse the same mental model.
+- **Rust Parity** (timing TBD) — Align Python and Go abstractions so a Rust reimplementation can reuse the same mental model.
 
 ### 🎯 Roadmap Decisions
 
@@ -105,7 +106,7 @@ The following were discussed and decided:
 | Renderer Upgrade | **High priority** | Integrate `rich`/`markdown-it` for syntax-highlighted output. Current plain rendering is too basic. |
 | Output Automation Pipeline | **Not needed** | Existing `--json-output` is sufficient. No structured streaming format required. |
 | Rust Parity | **Hold** | Keep `src-rs/` tree dormant. No active Rust work; revisit when there's a clear need. |
-| Eino framwork version | **High priority** | Use `src-go/` tree dormant. Implement this project in a modern agentic scheduler |
+| Eino framework version | **High priority** | Use `src-go/` for a compose-first parity implementation. Keep ADK out of core UX until an agentic requirement is concrete. |
 | Config Schema Extension | **Not needed** | Current config structure is fine. Keep code extensible but don't expand schema proactively. |
 
 ### Next milestones (tentative)
@@ -114,7 +115,8 @@ The following were discussed and decided:
 - [x] Agents Context Toggle (`--agents-context`)
 - [x] Renderer upgrade (rich/markdown-it integration)
 - [x] Plugin framework (Plan B: subcommand registration)
-- [ ] refactor src-go with `eino` framework instead of the bear openaiSDK
+- [x] refactor `src-go` with Eino compose workflows and an isolated ADK learning spike
+- [ ] decide whether/when the Go runtime becomes an install target
 
 ---
 
