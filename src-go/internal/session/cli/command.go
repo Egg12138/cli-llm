@@ -16,6 +16,7 @@ type Mode string
 const (
 	ModeFresh        Mode = "fresh"
 	ModeHelp         Mode = "help"
+	ModeVersion      Mode = "version"
 	ModeResumePicker Mode = "resume-picker"
 	ModeResumeNamed  Mode = "resume-named"
 )
@@ -39,12 +40,17 @@ func Parse(args []string) (Options, error) {
 	flags.SetOutput(io.Discard)
 
 	resume := flags.Bool("resume", false, "resume an existing session")
+	showVersion := flags.Bool("version", false, "print version and exit")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return Options{Mode: ModeHelp}, nil
 		}
 		return Options{}, err
 	}
+	if *showVersion {
+		return Options{Mode: ModeVersion}, nil
+	}
+
 
 	rest := flags.Args()
 	if len(rest) > 1 {
@@ -72,11 +78,16 @@ func Run(args []string, runner Runner) int {
 		printUsage(commandStdout)
 		return 0
 	}
+	if options.Mode == ModeVersion {
+		printVersion(commandStdout)
+		return 0
+	}
 	if err := runner.Run(options); err != nil {
 		return 1
 	}
 	return 0
 }
+
 
 func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "Usage: llm-session [--resume [NAME]]")
@@ -141,4 +152,8 @@ func currentEnvironment() map[string]string {
 		environment[parts[0]] = parts[1]
 	}
 	return environment
+}
+
+func printVersion(out io.Writer) {
+	fmt.Fprintf(out, "llm-session %s\n", Version)
 }

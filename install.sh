@@ -180,7 +180,7 @@ if command_exists go && [ -f "$PROJECT_ROOT/src-go/go.mod" ]; then
 		info "Building Go binary …"
 		(
 			cd "$PROJECT_ROOT/src-go"
-			go build -ldflags="-s -w" -o "$PROJECT_ROOT/src-go/llm" ./cmd/llm/ 2>&1 | sed "s/^/  $LOG_PREFIX /"
+			go build -ldflags="-s -w -X github.com/Egg12138/cli-llm/src-go/internal/cli.Version=$(grep -m1 'Version =' internal/cli/root.go | cut -d'"' -f2)" -o "$PROJECT_ROOT/src-go/llm" ./cmd/llm/ 2>&1 | sed "s/^/  $LOG_PREFIX /"
 		)
 		GO_BIN="$PROJECT_ROOT/src-go/llm"
 		if [ -x "$GO_BIN" ]; then
@@ -239,7 +239,7 @@ _install_go_plugin() {
 	info "Building plugin $name (Go) …"
 	(
 		cd "$PROJECT_ROOT/src-go"
-		go build -ldflags="-s -w" -o "$PROJECT_ROOT/src-go/$name" "./cmd/$name/" 2>&1 | sed "s/^/  $LOG_PREFIX /"
+		go build -ldflags="-s -w -X github.com/Egg12138/cli-llm/src-go/internal/session/cli.Version=$(grep -m1 'Version =' internal/session/cli/version.go | cut -d'"' -f2)" -o "$PROJECT_ROOT/src-go/$name" "./cmd/$name/" 2>&1 | sed "s/^/  $LOG_PREFIX /"
 	)
 	local bin="$PROJECT_ROOT/src-go/$name"
 	if [ -x "$bin" ]; then

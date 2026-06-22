@@ -42,6 +42,32 @@ func TestCommandHelpDoesNotRunRunner(t *testing.T) {
 	}
 }
 
+func TestCommandVersionPrintsVersion(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{}
+	var out bytes.Buffer
+	originalStdout := commandStdout
+	commandStdout = &out
+	t.Cleanup(func() {
+		commandStdout = originalStdout
+	})
+	code := Run([]string{"--version"}, runner)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if runner.runs != 0 {
+		t.Fatalf("runner should not be called for version, got %d calls", runner.runs)
+	}
+	if !strings.Contains(out.String(), Version) {
+		t.Fatalf("expected version %q in output, got %q", Version, out.String())
+	}
+	if !strings.Contains(out.String(), "llm-session") {
+		t.Fatalf("expected llm-session prefix in output, got %q", out.String())
+	}
+}
+
 func TestCommandStartsFreshMode(t *testing.T) {
 	t.Parallel()
 
