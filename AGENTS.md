@@ -116,22 +116,27 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 - [x] refactor `src-go` with Eino compose workflows and an isolated ADK learning spike
 - [ ] decide whether/when the Go runtime becomes an install target
 
-**0.4.0** (next track — multi-turn session mode, Go only)
-- [ ] `llm-session` plugin binary skeleton (reuse existing plugin dispatch)
-- [ ] Session persistence format (JSONL tree, id/parentId branching)
-- [ ] Git-like checkpoint model: auto-checkpoint after each turn, manual `/checkpoint <name>`
-- [ ] Branch topology data model (not dynamic traversal; pre-computed on checkpoint creation)
-- [ ] `/switch <target>` with tab completion: switch to existing node/branch, or create new branch
-- [ ] `/branches` — list all branches with topological view
+**0.4.0** (active track — multi-turn session mode, Go only)
+- [x] `llm-session` plugin binary skeleton (reuse existing plugin dispatch)
+- [x] Session persistence format (JSONL tree, id/parentId branching)
+- [x] Git-like checkpoint model: auto-checkpoint after each turn, manual `/checkpoint <name>`
+- [x] Branch topology data model with persisted branch heads
+- [x] `/switch <target>` behavior: switch to existing node/branch, or create a new branch
+- [x] `/branches` — list all branches from precomputed topology
+- [x] Context compression primitives: auto-trigger when token budget exceeded
+- [x] Simplified session system prompt: no tool calls; branch/checkpoint/head/session state stays local and is not sent to the model
+- [x] Auto session title generation from the first user message; fresh sessions no longer prompt for a session name
+- [x] Go-only: Python `src/` unchanged
+- [ ] High priority: `/branches` should not display `head_id`; show only branch names/topology to save terminal space
+- [ ] High priority: slash commands need completion plus inline descriptions (`/branches`, `/switch`, `/checkpoint`, `/exit`, and future commands)
+- [ ] High priority: show dynamic status while the model is thinking/stream setup is pending, so users can distinguish blocked I/O, waiting for generation, and normal response streaming
+- [ ] **TUI for the Ctrl+T transcript overlay** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.
 - [ ] `/export` — dump current branch full history to text file
 - [ ] `/new` — start a fresh session
-- [ ] Context compression: auto-trigger when token budget exceeded (Eino-managed summarization)
 - [ ] `@filename` file reference (with fuzzy completion) — inject content into context
 - [ ] `#head` / `#checkpoint` reference — jump to, diff against, or branch from
 - [ ] Bracketed paste mode: `[paste #1 +N lines]` markers → expand on submit
-- [ ] Simplified session system prompt (pi-inspired, no tool calls for v1)
 - [ ] Basic Eino Graph state machine for checkpoint transitions (not just linear chain)
-- [ ] Go-only: Python `src/` unchanged
 
 ---
 
@@ -154,7 +159,7 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 **Session files:** stored in `~/.cli-llm/sessions/<name>.jsonl`. Each session is a single JSONL file, append-only (crash-safe).
 
 **Launch modes:**
-- `llm-session` (no flags) → start fresh session, prompt for name, go straight to first user message.
+- `llm-session` (no flags) → start a fresh session immediately; the first user message triggers a lightweight title request, then the local store is silently renamed from a temporary internal filename.
 - `llm-session --resume` → list existing sessions, user picks one. Resumes at the leaf entry.
 - `llm-session --resume <name>` → resume specific session non-interactively.
 
@@ -163,6 +168,25 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 **Compression:** auto-trigger at 200k tokens (`keepRecentTokens: 20000`). Uses the default model for both chat and compression (no separate model config in v1).
 
 **Model:** no override — uses whatever `~/.cli-llm/config.toml` defaults to.
+
+
+### TUI Implementation (decided 2026-06-22)
+
+Full design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Summary of the locked decisions:
+
+**Terminal model — main buffer for chat, alt-screen only for the overlay.** Normal conversation stays in the terminal main buffer and appends like a shell command (native scrollback preserved). Only the Ctrl+T transcript overlay enters the alternate screen. This matches the existing terminal contract *and* matches how Claude Code (Ink, never enters alt-screen), Codex CLI (ratatui+crossterm, alt-screen only for pager overlays), and Gemini CLI (Ink, alt-buffer opt-in) all behave — verified by source inspection.
+
+**`/switch` rendering — separator in main buffer, isolation in the overlay.** On `/switch`, the main buffer prints a `── switched to <branch> ──` separator and keeps appending; old branch lines remain in scrollback (like `git checkout` leaving prior terminal output intact). The requirement "after switch, unrelated conversation must not be shown" is enforced by the **Ctrl+T overlay**, which rebuilds from `graph.State.ReachableHistory()` and therefore shows only the current branch's reachable chain. No mainstream tool clears/redraws the main buffer on branch switch — it destroys native scrollback — so we don't either.
+
+**Framework — Bubble Tea + bubbles + lipgloss.** Same ecosystem as the existing `glamour`/`lipgloss` transitive deps (already in the module cache; promote indirect → direct). Model-Update-View is pure-function, so `Update(msg)` + `View() string` snapshots fit the project's existing `[]KeyEvent` + `bytes.Buffer` headless test style. (Codex's `ratatui` is the Rust equivalent; this is the Go-idiomatic choice.)
+
+**Overlay capabilities (v1):** scrollable viewport (reuses existing offset/maxOffset logic), user/assistant role coloring + glamour markdown, a branch tree/list panel (`ListBranches`, current branch marked, select-to-preview), and **copy selected dialog to the system clipboard via OSC 52** (`ansi.SetClipboard`, already a transitive dep — works over SSH, no `xclip`/`pbcopy`, and is a byte sequence so it stays `bytes.Buffer`-testable). Full-text search is deferred.
+
+**Status indicator (main buffer, Follow-Up 3):** lightweight spinner with states `thinking` / `waiting for stream` / `streaming`, cleared on the first streamed token; deterministic single-line writes in non-TTY. Status text is never persisted as a session entry.
+
+**Integration — new `internal/session/tui` package implementing the existing `repl.TranscriptOverlay` interface.** `repl.Loop` is unchanged; `runner.go` swaps `transcriptOverlay{}` for `tui.NewOverlay(...)`. The old pure-ANSI `internal/session/terminal` package is kept (its alt-screen ANSI assertions still apply) and can be retired later.
+
+**Tests:** pure Model unit tests (drive `Update`, assert `View()` snapshot — layout bounds, navigation within `[0, maxOffset]`, branch-switch isolation asserting the *other* branch's content is absent, OSC 52 clipboard bytes) as primary; `teatest` for a few black-box event-loop flows. Keeps the headless, no-real-TTY philosophy.
 
 
 ### v1 MVP Scope — Must Work End-to-End
@@ -176,11 +200,13 @@ Only these items need to work for v1 to ship. Everything else is deferred to v1.
 | 3 | **Chat REPL** | User types a message → sent to LLM → streaming response rendered → auto-checkpoint created → loop. No tool calls, no file refs, no paste markers. Just type and reply. |
 | 4 | **Auto-checkpoint after each turn** | Every assistant response creates a `custom:checkpoint` entry with the response's hash as `returnTo`. This is the git-commit equivalent — the backbone of branching. |
 | 5 | **`/switch <target>`** | Navigate to a hash (detached) or branch name. Unknown name → create new branch from current position. This is the core navigation primitive. |
-| 6 | **`/branches`** | List all branches with head hashes. Pre-computed topology, not dynamic tree walk. |
+| 6 | **`/branches`** | List branches from pre-computed topology. User-facing output should stay compact and omit raw `head_id` by default. |
 | 7 | **`/checkpoint <name>`** | Labels the current node. Creates a named branch if one doesn't exist. |
 | 8 | **`/exit` (save)** | Write session to disk and exit. |
 | 9 | **Auto session titling** | Sub-request to LLM on first message, stores title in `session_info`. Makes `/resume` usable. |
 | 10 | **Context compression** | When token count exceeds 200k, summarize old entries into a `compaction` entry. Keeps the session usable for long conversations. |
+| 11 | **Slash command help/completion** | Slash commands expose completions and descriptions so the REPL is discoverable without reading docs. |
+| 12 | **Thinking status** | Show a lightweight dynamic status while waiting for model response or stream startup. |
 
 **Explicitly deferred:**
 - `/export` (can copy the JSONL file manually for now)
@@ -190,7 +216,7 @@ Only these items need to work for v1 to ship. Everything else is deferred to v1.
 - `#head` / `#checkpoint` references (v2)
 - Bracketed paste mode (v2)
 - Branch merge (v2)
-- Tab completion for `/switch` (bare hash/name entry is fine for v1)
+- Raw head IDs in `/branches` default output; hashes remain internal unless a command explicitly needs one
 
 ---
 
@@ -239,35 +265,16 @@ Session state is a JSONL tree (same structure as pi's session format):
 
 ### Session System Prompt (Simplified, v1 — No Tool Calls)
 
-Derived from pi coding-agent's system prompt template. Session mode v1 does not expose tool calls; all operations are context manipulation (file refs, node refs, slash commands) handled by the Go binary itself.
+Derived from pi coding-agent's system prompt template. Session mode v1 does not expose tool calls; all state-machine operations (branch, checkpoint, head hash, session filename/name) are handled locally by the Go binary and are not included in the chat model context.
 
 ```text
 You are an expert conversation assistant operating inside llm-session, a
-multi-turn session harness. The session uses a git-like checkpoint model
-where every response creates an automatic checkpoint you can branch from,
-switch to, or reference.
-
-Available references:
-- @<filename>     — Reference a file from the working directory (content
-                    injected into context on submit)
-- #<node|branch>  — Reference a checkpoint node or branch head (jump,
-                    diff, or branch from)
-
-Paste handling:
-- Large pastes (>10 lines or >1000 chars) are shown as
-  [paste #1 +123 lines] markers to keep the input area clean.
-  On submit, markers are expanded back to full content.
-- Small pastes are inlined directly.
+multi-turn session harness.
 
 Guidelines:
 - Be concise in your responses.
-- Show checkpoint IDs and branch names clearly when referencing history.
-- Use @ and # references when the user mentions files or past checkpoints.
-- If the user asks about session internals (format, storage, commands),
-  answer from first principles — this is a custom implementation, not pi.
 
 Current date: {current_date}
-Session: {session_name}  |  branch: {branch_name}  |  head: {current_entry_hash}
 ```
 
 **Future (v2+):** When tool calls are added, the template grows to include:
@@ -319,7 +326,7 @@ Reference: pi TUI editor's paste implementation.
 |---------|-------------|
 | `/export [file]` **(v1.1)** | Export current branch to a human-readable text file. Default filename: `session-{name}-{branch}.txt` |
 | `/new` **(v1.1)** | Start a fresh session. |
-| `/branches` | List all branches with head hashes and parent/child relationships. Reads pre-computed topology, not the full entry tree. |
+| `/branches` | List branches and parent/child relationships. Do not show raw `head_id` in the default output; reads pre-computed topology, not the full entry tree. |
 | `/switch <target>` | Navigate to a target:
   - **Hash** (`a1b2c3d4`) → detach to that node (like `git checkout <hash>` — working tree is that commit, no branch).
   - **Branch name** (`main`, `explore`) → switch to that branch's head.

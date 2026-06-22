@@ -12,6 +12,13 @@
 
 Use route A:稳健 MVP 优先.
 
+Current status:
+
+- MVP implementation exists in `src-go/cmd/llm-session` and `src-go/internal/session`.
+- Session state machine metadata is local-only; branch/checkpoint/head/session filename details must not be sent to the chat model.
+- Fresh sessions use a temporary internal filename and are silently renamed from the model-generated title after the first user message.
+- Interactive verification with real `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` has already exposed and fixed branch persistence/resume bugs; future UX changes must be verified with the same end-to-end style, not only `go test`.
+
 Do first:
 
 - `llm-session` plugin binary.
@@ -33,6 +40,103 @@ Do not do in MVP:
 - `/export`, `/new`, `/rename`.
 - merge semantics.
 - Python `src/` changes.
+
+## High-Priority Follow-Up Tasks
+
+These tasks are required before treating `llm-session` as usable UX. They are intentionally scoped before the larger TUI redesign.
+
+### Follow-Up 1: Compact `/branches` output
+
+**Files:**
+- Modify: `src-go/internal/session/repl/commands.go`
+- Modify: `src-go/internal/session/repl/commands_test.go`
+
+**Goal:** `/branches` should not print raw `head_id` in the default output. Show branch names and parent/topology only, because hashes waste horizontal space and are local state-machine details.
+
+**Test first:**
+
+- Update the `/branches` command test so output contains branch names such as `main` and `experiment`.
+- Assert output does not contain known head IDs.
+- Keep parent relationship coverage if parent data is available.
+
+**Expected command:**
+
+```bash
+cd src-go
+GOCACHE=/tmp/go-build-cache go test ./internal/session/repl -run TestExecuteCommands -v
+```
+
+**Interactive verification:**
+
+Run a fresh temp-home session, create at least two branches, run `/branches`, and confirm the visible output is compact and hash-free.
+
+### Follow-Up 2: Slash command completion and descriptions
+
+**Files:**
+- Modify: `src-go/internal/session/repl/commands.go`
+- Modify: `src-go/internal/session/repl/repl.go`
+- Modify: `src-go/internal/session/cli/runner.go`
+- Modify/Add tests under `src-go/internal/session/repl/`
+
+**Goal:** Slash commands need discoverability in the REPL. Completion should include command names and descriptions for `/branches`, `/switch`, `/checkpoint`, `/exit`, and future commands.
+
+**Implementation notes:**
+
+- Define command metadata once, for example `CommandSpec{Name, Usage, Description}`.
+- Reuse the metadata for parser validation, completion candidates, and help/description rendering.
+- Completion should work for command names after typing `/`.
+- `/switch` completion should include branch names first; hash completion can remain deferred unless needed.
+- Keep command metadata local to the CLI; do not include it in model prompts.
+
+**Test first:**
+
+- Unit test that command specs include name, usage, and non-empty description.
+- Unit test that completion for `/` includes all current command names.
+- Unit test that completion for `/switch ` includes existing branch names.
+
+**Expected command:**
+
+```bash
+cd src-go
+GOCACHE=/tmp/go-build-cache go test ./internal/session/repl ./internal/session/cli -run 'Test.*Command|Test.*Completion|TestRunner' -v
+```
+
+**Interactive verification:**
+
+Run `llm-session` in a pseudo-terminal or real terminal, type `/` and verify completions/descriptions are visible; type `/switch ` after creating branches and verify branch suggestions appear.
+
+### Follow-Up 3: Dynamic thinking/status indicator
+
+**Files:**
+- Modify: `src-go/internal/session/runtime/chat.go`
+- Modify: `src-go/internal/session/repl/repl.go`
+- Modify/Add tests under `src-go/internal/session/runtime/` and `src-go/internal/session/repl/`
+
+**Goal:** While waiting for the title request, chat request, or first stream chunk, show a lightweight dynamic status so users can tell whether the app is blocked, waiting for the provider, or generating.
+
+**Implementation notes:**
+
+- Status is a terminal UX concern; keep it out of the model prompt and persisted session history.
+- Minimum states: `thinking`, `waiting for stream`, `streaming`.
+- Stop/clear the indicator as soon as normal assistant output begins.
+- Keep behavior safe for non-TTY/stdout capture: either disable animation or emit deterministic status updates.
+
+**Test first:**
+
+- Fake model delays before stream creation and assert status callbacks are emitted.
+- Fake stream delays before first chunk and assert the status changes before content is written.
+- Assert status text is not persisted as a session entry.
+
+**Expected command:**
+
+```bash
+cd src-go
+GOCACHE=/tmp/go-build-cache go test ./internal/session/runtime ./internal/session/repl -run 'TestChatTurn|TestREPL|TestStatus' -v
+```
+
+**Interactive verification:**
+
+Use the real configured provider through `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; ask a normal question and confirm the terminal shows an active status before response tokens arrive.
 
 ## Current Codebase Anchors
 

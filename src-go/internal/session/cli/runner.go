@@ -18,7 +18,7 @@ import (
 	sessionrepl "github.com/Egg12138/cli-llm/src-go/internal/session/repl"
 	sessionruntime "github.com/Egg12138/cli-llm/src-go/internal/session/runtime"
 	sessionstore "github.com/Egg12138/cli-llm/src-go/internal/session/store"
-	sessionterminal "github.com/Egg12138/cli-llm/src-go/internal/session/terminal"
+	sessiontui "github.com/Egg12138/cli-llm/src-go/internal/session/tui"
 	einomodel "github.com/cloudwego/eino/components/model"
 )
 
@@ -193,15 +193,13 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 				})
 			}))
 			code := sessionrepl.Loop(sessionrepl.LoopOptions{
-				Reader: newLineReader(d.Stdin),
-				Chat:   runner,
-				State:  req.State,
-				Stdout: d.Stdout,
-				Stderr: d.Stderr,
-				Store:  req.Store,
-				Overlay: transcriptOverlay{
-					height: 20,
-				},
+				Reader:  newLineReader(d.Stdin),
+				Chat:    runner,
+				State:   req.State,
+				Stdout:  d.Stdout,
+				Stderr:  d.Stderr,
+				Store:   req.Store,
+				Overlay: sessiontui.NewOverlay(),
 			})
 			if code != 0 {
 				return fmt.Errorf("repl exited with code %d", code)
@@ -270,27 +268,4 @@ func (r *lineReader) ReadEvent(prompt string) sessionrepl.InputEvent {
 		return sessionrepl.InputEvent{Kind: sessionrepl.EventTranscript}
 	}
 	return sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: line}
-}
-
-type transcriptOverlay struct {
-	height int
-}
-
-func (o transcriptOverlay) Open(state *graph.State, out io.Writer) error {
-	history, err := state.ReachableHistory()
-	if err != nil {
-		return err
-	}
-	lines := make([]string, 0, len(history))
-	for _, entry := range history {
-		if entry.Type != model.EntryTypeMessage {
-			continue
-		}
-		data, err := entry.MessageData()
-		if err != nil {
-			return err
-		}
-		lines = append(lines, data.Role+": "+data.Content)
-	}
-	return sessionterminal.NewTranscriptViewer(out, o.height).Open(lines, []sessionterminal.KeyEvent{{Key: sessionterminal.KeyEsc}})
 }
