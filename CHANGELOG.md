@@ -4,16 +4,23 @@ All notable changes to this project will be documented in this file.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/) and uses semantic versioning when we are ready for public releases.  
 Until then, entries describe internal milestones so the team can track progress.
 
-## [Unreleased]
+## [0.4.1] – 2026-06-23
 
 ### Added
-- TUI transcript overlay (Ctrl+T) with Bubble Tea — branch-aware viewport, role/markdown highlighting, branch panel with switch-isolated preview, and copy-selected-dialog via OSC 52.
-- Main-buffer status indicator (thinking → waiting for stream → streaming) with animated TTY spinner and deterministic plain-text fallback for non-TTY mode.
-- Semantic color tokens (`AdaptiveColor`) in TUi styles, with `NO_COLOR` environment variable support.
-- Minimum terminal size check in the overlay with a clear "terminal too small" message.
+- `llm-session --version` flag with ldflags-injectable version (`0.4.1`).
+- `/t` / `/transcript` REPL command to open the TUI overlay (Ctrl+T is intercepted by POSIX terminal line discipline and never reaches the app).
+- Status reporter in `runtime` (`StatusReporter` interface, `StatusThinking`/`StatusWaitingStream`/`StatusStreaming` lifecycle).
+- TTY spinner (`TTYReporter`) with braille frames and deterministic plain-text fallback (`PlainReporter`).
+- Semantic color tokens (`AdaptiveColor`) for role styles, with `NO_COLOR` env var support.
+- Minimum terminal size check in the TUI overlay (`60×8` minimum).
 ### Changed
-- Esc in the branch panel now returns to scroll mode instead of quitting the overlay.
-- Footer hint now shows `Tab` (branches) and `y` (copy) alongside navigation keys.
+- `/branches` output no longer displays raw head IDs — shows only branch names and parent topology.
+- `Esc` in the TUI branch panel returns to scroll mode instead of quitting.
+- Footer hint in TUI overlay shows `Tab` (branches) and `y` (copy) alongside nav keys.
+- Install script (`install.sh`) injects version via `-X ldflags` for both main Go binary and plugin builds.
+### Fixed
+- Ctrl+T raw byte detection relaxed from `==` to `strings.Contains` for terminals that pass `\x14` through.
+- `Esc` in branch panel quits overlay instead of returning to scroll mode.
 
 ## [0.4.0] – Advanced Provider & Release Prep *(internal)*
 ### Added
