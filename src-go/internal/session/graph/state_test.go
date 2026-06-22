@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -250,6 +251,20 @@ func TestReachableFrom(t *testing.T) {
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("expected empty non-nil slice, got %#v", empty)
 	}
+
+	t.Run("missing entry", func(t *testing.T) {
+		const bogusID = "does-not-exist"
+		_, err := state.ReachableFrom(bogusID)
+		if err == nil {
+			t.Fatalf("expected error for missing entry, got nil")
+		}
+		if !strings.Contains(err.Error(), "missing entry") {
+			t.Fatalf("expected error to contain %q, got %v", "missing entry", err)
+		}
+		if !strings.Contains(err.Error(), bogusID) {
+			t.Fatalf("expected error to contain bogus id %q, got %v", bogusID, err)
+		}
+	})
 }
 
 func mustMessage(t *testing.T, parentID, role, content string) model.Entry {
