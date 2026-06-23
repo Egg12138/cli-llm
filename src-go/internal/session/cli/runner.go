@@ -21,6 +21,7 @@ import (
 	sessiontui "github.com/Egg12138/cli-llm/src-go/internal/session/tui"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"golang.org/x/term"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type SessionStore interface {
@@ -40,6 +41,7 @@ type StartREPLRequest struct {
 	Store  SessionStore
 	Model  einomodel.BaseChatModel
 	Config config.AppConfig
+	NoTUI  bool
 }
 
 type RunnerDeps struct {
@@ -93,6 +95,7 @@ func (r SessionRunner) Run(options Options) error {
 		Store:  store,
 		Model:  chatModel,
 		Config: r.deps.Config,
+			NoTUI:  options.NoTUI,
 	})
 }
 
@@ -276,4 +279,59 @@ func (r *lineReader) ReadEvent(prompt string) sessionrepl.InputEvent {
 		return sessionrepl.InputEvent{Kind: sessionrepl.EventTranscript}
 	}
 	return sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: line}
+}
+
+func runTUISession(req StartREPLRequest) error {
+	m := sessiontui.NewSessionModel(sessiontui.SessionConfig{
+		State:       req.State,
+		Store:       req.Store,
+		Model:       req.Model,
+		TitleModel:  req.Model,
+		ModelName:   req.Config.DefaultModel,
+		SessionName: req.Name,
+	})
+	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
+	return err
+}
+
+func runREPLSession(req StartREPLRequest, d RunnerDeps) error {
+	sessionName := req.Name
+	runner := sessionrepl.ChatRunner(chatRunnerFunc(func(input string) error {
+		return sessionruntime.RunChatTurn(context.Background(), sessionruntime.ChatTurnRequest{
+			Input:       input,
+			State:       req.State,
+			Store:       req.Store,
+			Writer:      d.Stdout,
+			Model:       req.Model,
+			TitleModel:  req.Model,
+			SessionName: sessionName,
+			ModelName:   req.Config.DefaultModel,
+			OnTitle: func(result sessionruntime.TitleResult) error {
+				nextName := sessionstore.NameFromTitle(result.Title)
+				if concrete, ok := req.Store.(interface {
+					AvailableName(string) string
+				}); ok {
+					nextName = concrete.AvailableName(result.Title)
+				}
+				if err := req.Store.Rename(nextName); err != nil {
+					return err
+				}
+				sessionName = nextName
+				return nil
+			},
+		})
+	}))
+	code := sessionrepl.Loop(sessionrepl.LoopOptions{
+		Reader:  newLineReader(d.Stdin),
+		Chat:    runner,
+		State:   req.State,
+		Stdout:  d.Stdout,
+		Stderr:  d.Stderr,
+		Store:   req.Store,
+		Overlay: sessiontui.NewOverlay(),
+	})
+	if code != 0 {
+		return fmt.Errorf("repl exited with code %d", code)
+	}
+	return nil
 }

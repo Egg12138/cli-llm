@@ -22,8 +22,9 @@ const (
 )
 
 type Options struct {
-	Mode Mode
-	Name string
+	Mode  Mode
+	Name  string
+	NoTUI bool
 }
 
 type Runner interface {
@@ -41,6 +42,7 @@ func Parse(args []string) (Options, error) {
 
 	resume := flags.Bool("resume", false, "resume an existing session")
 	showVersion := flags.Bool("version", false, "print version and exit")
+	noTUI := flags.Bool("no-tui", false, "disable TUI mode (line-based REPL)")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return Options{Mode: ModeHelp}, nil
@@ -51,7 +53,6 @@ func Parse(args []string) (Options, error) {
 		return Options{Mode: ModeVersion}, nil
 	}
 
-
 	rest := flags.Args()
 	if len(rest) > 1 {
 		return Options{}, fmt.Errorf("expected at most one session name, got %d", len(rest))
@@ -61,12 +62,12 @@ func Parse(args []string) (Options, error) {
 		if len(rest) > 0 {
 			return Options{}, fmt.Errorf("session name requires --resume")
 		}
-		return Options{Mode: ModeFresh}, nil
+		return Options{Mode: ModeFresh, NoTUI: *noTUI}, nil
 	}
 	if len(rest) == 0 {
-		return Options{Mode: ModeResumePicker}, nil
+		return Options{Mode: ModeResumePicker, NoTUI: *noTUI}, nil
 	}
-	return Options{Mode: ModeResumeNamed, Name: rest[0]}, nil
+	return Options{Mode: ModeResumeNamed, Name: rest[0], NoTUI: *noTUI}, nil
 }
 
 func Run(args []string, runner Runner) int {
@@ -88,6 +89,9 @@ func Run(args []string, runner Runner) int {
 	return 0
 }
 
+func printVersion(out io.Writer) {
+	fmt.Fprintf(out, "llm-session %s\n", Version)
+}
 
 func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "Usage: llm-session [--resume [NAME]]")
@@ -96,6 +100,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  llm-session                 Start a fresh session")
 	fmt.Fprintln(out, "  llm-session --resume        Pick a session to resume")
 	fmt.Fprintln(out, "  llm-session --resume NAME   Resume NAME")
+	fmt.Fprintln(out, "  llm-session --no-tui         Disable TUI (line-based REPL)")
 }
 
 func Main(args []string) int {
@@ -152,8 +157,4 @@ func currentEnvironment() map[string]string {
 		environment[parts[0]] = parts[1]
 	}
 	return environment
-}
-
-func printVersion(out io.Writer) {
-	fmt.Fprintf(out, "llm-session %s\n", Version)
 }
