@@ -29,4 +29,8 @@ var (
 		"assistant": lipgloss.NewStyle().Foreground(roleAssistantColor),
 		"system":    lipgloss.NewStyle().Foreground(roleSystemColor),
 	}
+
+	inputStyle         = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true, false, false, false)
+	inputDisabledStyle = lipgloss.NewStyle().Faint(true).Border(lipgloss.NormalBorder(), true, false, false, false)
+	statusStyle        = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("15"))
 )

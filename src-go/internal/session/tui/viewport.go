@@ -77,6 +77,21 @@ func (vp *viewport) maxOffset() int {
 	return len(vp.lines) - vp.height
 }
 
+func (vp *viewport) LineCount() int {
+	return len(vp.lines)
+}
+
+func (vp *viewport) AppendToLastLine(text string) {
+	if len(vp.lines) == 0 {
+		vp.lines = append(vp.lines, text)
+		return
+	}
+	vp.lines[len(vp.lines)-1] += text
+	if vp.AtBottom() {
+		vp.ScrollToBottom()
+	}
+}
+
 func (vp *viewport) clampOffset() {
 	mx := vp.maxOffset()
 	if vp.offset > mx {
