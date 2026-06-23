@@ -63,3 +63,47 @@ func TestOverlayNewModelFromStateUsesCurrentReachableHistoryAndBranches(t *testi
 		t.Fatalf("preview leaked main-only content: %q", preview)
 	}
 }
+
+
+func TestOverlayAfterOneChatTurnShowsMessages(t *testing.T) {
+	now := time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC)
+
+	// Simulate what RunChatTurn produces after one turn
+	userEntry, err := model.NewMessage("", "user", "hi", now)
+	if err != nil {
+		t.Fatalf("NewMessage user: %v", err)
+	}
+	assistantEntry, err := model.NewMessage(userEntry.ID, "assistant", "hello from model", now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("NewMessage assistant: %v", err)
+	}
+	checkpoint, err := model.NewCheckpoint(assistantEntry.ID, "", assistantEntry.ID, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("NewCheckpoint: %v", err)
+	}
+
+	state := graph.NewState([]model.Entry{userEntry, assistantEntry, checkpoint})
+	state.AutoCheckpoint(checkpoint)
+
+	var clip bytes.Buffer
+	m, err := newModelFromState(state, &clip)
+	if err != nil {
+		t.Fatalf("newModelFromState: %v", err)
+	}
+
+	view := m.View()
+	t.Logf("View() output:\n%s", view)
+
+	if !strings.Contains(view, "hi") {
+		t.Fatalf("view missing user message 'hi': %q", view)
+	}
+	if !strings.Contains(view, "hello from model") {
+		t.Fatalf("view missing assistant message: %q", view)
+	}
+	if !strings.Contains(view, "session") {
+		t.Fatalf("view missing header 'session': %q", view)
+	}
+	if !strings.Contains(view, "quit") {
+		t.Fatalf("view missing footer: %q", view)
+	}
+}

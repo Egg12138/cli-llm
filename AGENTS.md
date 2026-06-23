@@ -127,7 +127,6 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 - [x] Simplified session system prompt: no tool calls; branch/checkpoint/head/session state stays local and is not sent to the model
 - [x] Auto session title generation from the first user message; fresh sessions no longer prompt for a session name
 - [x] Go-only: Python `src/` unchanged
-- [ ] High priority: `/branches` should not display `head_id`; show only branch names/topology to save terminal space
 - [ ] High priority: slash commands need completion plus inline descriptions (`/branches`, `/switch`, `/checkpoint`, `/exit`, and future commands)
 - [x] High priority: show dynamic status while the model is thinking/stream setup is pending, so users can distinguish blocked I/O, waiting for generation, and normal response streaming
 - [x] **TUI for the Ctrl+T transcript overlay** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.

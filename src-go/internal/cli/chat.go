@@ -231,6 +231,12 @@ func runChatCommand(args []string) int {
 		return 1
 	}
 
+	if streamOutput {
+		fmt.Fprintf(commandStderr, "[%s] Generating...\n", appConfig.DefaultModel)
+	} else {
+		fmt.Fprintf(commandStderr, "[%s] Generating (non-streaming)...\n", appConfig.DefaultModel)
+	}
+
 	result, err := runner.Run(context.Background(), request)
 	if err != nil {
 		fmt.Fprintln(commandStderr, err)
