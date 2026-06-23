@@ -170,45 +170,16 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	}
 	if d.StartREPLFunc == nil {
 		d.StartREPLFunc = func(req StartREPLRequest) error {
-			sessionName := req.Name
-			runner := sessionrepl.ChatRunner(chatRunnerFunc(func(input string) error {
-				return sessionruntime.RunChatTurn(context.Background(), sessionruntime.ChatTurnRequest{
-					Input:       input,
-					State:       req.State,
-					Store:       req.Store,
-					Writer:      d.Stdout,
-					Model:       req.Model,
-					TitleModel:  req.Model,
-					SessionName: sessionName,
-					ModelName:   req.Config.DefaultModel,
-					OnTitle: func(result sessionruntime.TitleResult) error {
-						nextName := sessionstore.NameFromTitle(result.Title)
-						if concrete, ok := req.Store.(interface {
-							AvailableName(string) string
-						}); ok {
-							nextName = concrete.AvailableName(result.Title)
-						}
-						if err := req.Store.Rename(nextName); err != nil {
-							return err
-						}
-						sessionName = nextName
-						return nil
-					},
-				})
-			}))
-			code := sessionrepl.Loop(sessionrepl.LoopOptions{
-				Reader:  newLineReader(d.Stdin),
-				Chat:    runner,
-				State:   req.State,
-				Stdout:  d.Stdout,
-				Stderr:  d.Stderr,
-				Store:   req.Store,
-				Overlay: sessiontui.NewOverlay(),
-			})
-			if code != 0 {
-				return fmt.Errorf("repl exited with code %d", code)
+			useTUI := !req.NoTUI
+			if f, ok := d.Stdout.(*os.File); ok {
+				useTUI = useTUI && term.IsTerminal(int(f.Fd()))
+			} else {
+				useTUI = false
 			}
-			return nil
+			if useTUI {
+				return runTUISession(req)
+			}
+			return runREPLSession(req, d)
 		}
 	}
 	return d
