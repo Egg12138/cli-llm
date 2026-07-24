@@ -49,6 +49,13 @@ func PrepareExecution(args []string, lookPath func(string) (string, error)) (Exe
 		}, nil
 	}
 
+	if replacement, ok := commandAliases[args[0]]; ok {
+		resolved := make([]string, len(args))
+		resolved[0] = replacement
+		copy(resolved[1:], args[1:])
+		args = resolved
+	}
+
 	dispatchResult := plugins.NewDispatcher(builtinSubcommands, lookPath).Resolve(args)
 	switch dispatchResult.Kind {
 	case plugins.Builtin:
@@ -117,11 +124,28 @@ func runRootHelp() int {
 	fmt.Fprintln(commandStdout, "Usage: llm [OPTIONS] COMMAND [ARGS]...")
 	fmt.Fprintln(commandStdout)
 	fmt.Fprintln(commandStdout, "Commands:")
-	fmt.Fprintln(commandStdout, "  chat      Run a chat request")
-	fmt.Fprintln(commandStdout, "  inspect   Inspect provider profiles")
-	fmt.Fprintln(commandStdout, "  provider  Inspect provider metadata")
-	fmt.Fprintln(commandStdout, "  session   Run the llm-session plugin")
-	fmt.Fprintln(commandStdout, "  toolcall  Run a single tool-call request")
+
+	aliasOf := make(map[string]string)
+	for alias, cmd := range commandAliases {
+		aliasOf[cmd] = alias
+	}
+
+	entries := []struct {
+		name, desc string
+	}{
+		{"chat", "Run a chat request"},
+		{"inspect", "Inspect provider profiles"},
+		{"provider", "Inspect provider metadata"},
+		{"session", "Run the llm-session plugin"},
+		{"toolcall", "Run a single tool-call request"},
+	}
+	for _, e := range entries {
+		line := "  " + e.name
+		if alias, ok := aliasOf[e.name]; ok {
+			line += " (" + alias + ")"
+		}
+		fmt.Fprintf(commandStdout, "%-28s %s\n", line, e.desc)
+	}
 	return 0
 }
 
