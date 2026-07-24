@@ -110,33 +110,22 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 
 ### Next milestones (tentative)
 
-**0.3.0** (current track)
-- [x] Agents Context Toggle (`--agents-context`)
-- [x] Renderer upgrade (rich/markdown-it integration)
-- [x] Plugin framework (Plan B: subcommand registration)
-- [x] refactor `src-go` with Eino compose workflows and an isolated ADK learning spike
-- [ ] decide whether/when the Go runtime becomes an install target
+**0.3.0** (delivered)
+- [x] Agents Context Toggle, renderer upgrade (rich/markdown-it), plugin framework (cargo-style dispatch), Go/Eino parity spike.
 
-**0.4.0** (active track — multi-turn session mode, Go only)
-- [x] `llm-session` plugin binary skeleton (reuse existing plugin dispatch)
-- [x] Session persistence format (JSONL tree, id/parentId branching)
-- [x] Git-like checkpoint model: auto-checkpoint after each turn, manual `/checkpoint <name>`
-- [x] Branch topology data model with persisted branch heads
-- [x] `/switch <target>` behavior: switch to existing node/branch, or create a new branch
-- [x] `/branches` — list all branches from precomputed topology
-- [x] Context compression primitives: auto-trigger when token budget exceeded
-- [x] Simplified session system prompt: no tool calls; branch/checkpoint/head/session state stays local and is not sent to the model
-- [x] Auto session title generation from the first user message; fresh sessions no longer prompt for a session name
-- [x] Go-only: Python `src/` unchanged
-- [x] **High priority:** add `/help`; it must list every enabled slash command with usage and a concise description
-- [x] **High priority:** add prefix-matching slash-command completion with inline descriptions; fuzzy and argument completion are out of scope for v1
-- [x] **High priority / bug:** replace the current single-line input with a real multi-line editor that preserves spaces and UTF-8/CJK input; Enter submits, while Shift+Enter or Ctrl+J inserts a newline
-- [x] **High priority / bug:** render complete multi-line assistant responses with preserved newlines, terminal-width wrapping, and native scrollback; long responses must not be clipped to one line or one screen
-- [x] **High priority / bug:** make the thinking/stream-start spinner refresh in place on one logical terminal row and clear it before response content; spinner frames must never accumulate across the line
-- [x] **High priority / verification:** exercise the built `llm-session` binary through a PTY, capture its real ANSI byte stream and reconstructed terminal screen, and assert user-visible behavior instead of inferring it only from `View()` or source code
-- [x] **Ctrl+T transcript overlay foundation** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). This does not mean the main input/response TUI is release-ready. Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.
+**0.4.0** (delivered — multi-turn session mode, Go only)
+- [x] `llm-session` plugin binary with git-like checkpoint model, branching, auto-checkpoint, context compression, auto titling, simplified system prompt.
+- [x] `/help`, prefix slash-command completion, multi-line UTF-8 input editor, complete response rendering, in-place TTY spinner, Ctrl+C turn-cancel.
+- [x] Ctrl+T transcript overlay (scrollable viewport, role/markdown highlighting, branch panel, OSC 52 copy).
+- [x] PTY/VT acceptance test suite covering help, completion, CJK/multi-line input, long responses, resize, cancellation, status cleanup, overlay restore.
+- [x] Root-level alias registry: `llm s` → `llm session`, etc.
+
+**Ongoing / unstarted:**
+- [ ] decide whether/when the Go runtime becomes an install target
 - [ ] `/export` — dump current branch full history to text file
-- [ ] `/new` — start a fresh session
+- [ ] `/new` — launch a fresh session from within the REPL; the current session remains saved and untouched on disk
+- [ ] `/model <name>` — switch the active model mid-session. Once set at a checkpoint node, that node and all descendants carry the model choice; subsequent chat turns default to the nearest ancestor's `/model` setting
+- [ ] `llm-session --delete` — CLI flag that enters an interactive TUI picker listing all persisted sessions; user selects one or more to delete their `.jsonl` files from disk. Not a slash command — session removal is a session-scope operation
 - [ ] `@filename` file reference (with fuzzy completion) — inject content into context
 - [ ] `#head` / `#checkpoint` reference — jump to, diff against, or branch from
 - [ ] Bracketed paste mode: `[paste #1 +N lines]` markers → expand on submit
