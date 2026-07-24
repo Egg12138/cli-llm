@@ -98,6 +98,71 @@ func TestEditorControlEvents(t *testing.T) {
 	})
 }
 
+func TestEditorVimNormalChangeVisualYankAndPaste(t *testing.T) {
+	m := NewEditorModel("> ")
+	m = updateEditor(t, m, keyRunes("alpha beta"))
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.Mode() != vimNormal {
+		t.Fatalf("mode after Esc = %s, want NORMAL", m.Mode())
+	}
+
+	m = updateEditor(t, m, keyRunes("b"))
+	m = updateEditor(t, m, keyRunes("c"))
+	m = updateEditor(t, m, keyRunes("w"))
+	if m.Mode() != vimInsert || m.Value() != "alpha " {
+		t.Fatalf("after bcw mode=%s value=%q", m.Mode(), m.Value())
+	}
+	m = updateEditor(t, m, keyRunes("gamma"))
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	m = updateEditor(t, m, keyRunes("0"))
+	m = updateEditor(t, m, keyRunes("v"))
+	m = updateEditor(t, m, keyRunes("e"))
+	if m.Mode() != vimVisual {
+		t.Fatalf("mode after v = %s, want VISUAL", m.Mode())
+	}
+	m = updateEditor(t, m, keyRunes("y"))
+	m = updateEditor(t, m, keyRunes("$"))
+	m = updateEditor(t, m, keyRunes("p"))
+
+	if got := m.Value(); got != "alpha gammaalpha" {
+		t.Fatalf("edited value = %q, want %q", got, "alpha gammaalpha")
+	}
+}
+
+func TestEditorShowsModeAndVisualSelection(t *testing.T) {
+	m := NewEditorModel("> ")
+	m = updateEditor(t, m, keyRunes("你好 world"))
+	if view := m.View(); !strings.Contains(view, "-- INSERT --") {
+		t.Fatalf("insert view missing mode label:\n%s", view)
+	}
+
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if view := m.View(); !strings.Contains(view, "-- NORMAL --") {
+		t.Fatalf("normal view missing mode label:\n%s", view)
+	}
+	m = updateEditor(t, m, keyRunes("0"))
+	m = updateEditor(t, m, keyRunes("v"))
+	m = updateEditor(t, m, keyRunes("e"))
+	view := m.View()
+	if !strings.Contains(view, "-- VISUAL --") {
+		t.Fatalf("visual view missing mode label:\n%s", view)
+	}
+	if selected := visualSelectionStyle.Render("你"); !strings.Contains(view, selected) {
+		t.Fatalf("visual view missing selected rune %q:\n%s", selected, view)
+	}
+}
+
+func TestEditorVimUndoRestoresInsertSession(t *testing.T) {
+	m := NewEditorModel("> ")
+	m = updateEditor(t, m, keyRunes("temporary"))
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	m = updateEditor(t, m, keyRunes("u"))
+
+	if got := m.Value(); got != "" {
+		t.Fatalf("value after undoing insert = %q, want empty", got)
+	}
+}
+
 func updateEditor(t *testing.T, m EditorModel, msg tea.Msg) EditorModel {
 	t.Helper()
 	next, _ := m.Update(msg)

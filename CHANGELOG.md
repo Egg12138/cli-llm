@@ -6,6 +6,10 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+### Added
+- `llm-session` TTY prompts now provide INSERT, NORMAL, and VISUAL Vim modes with core motions, `cw`/`ce`, delete/change/yank operators, an unnamed register with `p`/`P`, and undo. Fresh prompts start in INSERT mode for compatibility.
+- Unit and built-binary PTY coverage for modal editing, Unicode/CJK word motion, visual selection, yank/paste, provider input, and JSONL persistence.
+
 ## [0.4.3] – 2026-07-24
 
 ### Added

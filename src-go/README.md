@@ -79,3 +79,9 @@ work. The transcript viewer is isolated to the alternate-screen overlay path; it
 emits alternate scroll mode while open and restores terminal modes on exit. The
 current line reader recognizes the Ctrl+T control character when the terminal
 input path delivers it.
+
+Each fresh TTY prompt starts in Vim INSERT mode so direct typing still works.
+Press Esc for NORMAL mode and `v` for VISUAL mode. The core map includes
+`h/j/k/l`, arrows, `w/b/e`, `0/^/$`, `gg/G`, `i/I/a/A/o/O`, `x`, `r`,
+`d/c/y` with motions, `dd/cc/yy`, `cw`/`ce`, `p/P`, and `u`. Enter submits in
+every mode; Ctrl+J inserts a newline and Ctrl+T opens the transcript overlay.

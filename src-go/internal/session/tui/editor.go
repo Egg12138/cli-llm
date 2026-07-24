@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	sessionrepl "github.com/Egg12138/cli-llm/src-go/internal/session/repl"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -13,7 +12,8 @@ import (
 const maxEditorHeight = 8
 
 type EditorModel struct {
-	textarea            textarea.Model
+	editor              vimEditor
+	prompt              string
 	matches             []sessionrepl.Completion
 	selected            int
 	width               int
@@ -24,24 +24,18 @@ type EditorModel struct {
 }
 
 func NewEditorModel(prompt string) EditorModel {
-	input := textarea.New()
-	input.Prompt = prompt
-	input.ShowLineNumbers = false
-	input.SetWidth(defaultWidth)
-	input.SetHeight(1)
-	input.Focus()
-
 	m := EditorModel{
-		textarea: input,
-		width:    defaultWidth,
-		height:   defaultHeight,
+		editor: newVimEditor(),
+		prompt: prompt,
+		width:  defaultWidth,
+		height: defaultHeight,
 	}
 	m.refreshCompletions()
 	return m
 }
 
 func (m EditorModel) Init() tea.Cmd {
-	return textarea.Blink
+	return nil
 }
 
 func (m EditorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -49,32 +43,27 @@ func (m EditorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.recalculateSize()
 		return m, nil
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	}
-
-	var cmd tea.Cmd
-	m.textarea, cmd = m.textarea.Update(message)
-	m.recalculateSize()
-	return m, cmd
+	return m, nil
 }
 
 func (m EditorModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		if m.textarea.Value() == "" {
+		if m.editor.Value() == "" {
 			return m, nil
 		}
 		m.done = true
-		m.event = sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: m.textarea.Value()}
+		m.event = sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: m.editor.Value()}
 		return m, tea.Quit
 	case tea.KeyCtrlJ:
-		m.textarea.InsertString("\n")
+		m.enterInsertForNewline()
+		m.editor.InsertUserText("\n")
 		m.completionDismissed = false
 		m.refreshCompletions()
-		m.recalculateSize()
 		return m, nil
 	case tea.KeyCtrlT:
 		m.done = true
@@ -85,24 +74,28 @@ func (m EditorModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.event = sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Err: sessionrepl.ErrInterrupted}
 		return m, tea.Quit
 	case tea.KeyCtrlD:
-		if m.textarea.Value() == "" {
+		if m.editor.Value() == "" {
 			m.done = true
 			m.event = sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Err: io.EOF}
 			return m, tea.Quit
 		}
+		if m.editor.Mode() == vimInsert {
+			m.editor.DeleteAtCursor()
+			m.refreshAfterEdit()
+		}
+		return m, nil
 	case tea.KeyTab:
-		if len(m.matches) > 0 {
-			line, cursor := sessionrepl.ApplyCompletion(m.textarea.Value(), m.cursor(), m.matches[m.selected])
-			m.textarea.SetValue(line)
-			m.textarea.SetCursor(cursor)
+		if m.editor.Mode() == vimInsert && len(m.matches) > 0 {
+			line, cursor := sessionrepl.ApplyCompletion(m.editor.Value(), m.cursor(), m.matches[m.selected])
+			m.editor.SetValue(line)
+			m.editor.SetCursor(cursor)
 			m.matches = nil
 			m.selected = 0
 			m.completionDismissed = true
-			m.recalculateSize()
 			return m, nil
 		}
 	case tea.KeyUp:
-		if len(m.matches) > 0 {
+		if m.editor.Mode() == vimInsert && len(m.matches) > 0 {
 			m.selected--
 			if m.selected < 0 {
 				m.selected = len(m.matches) - 1
@@ -110,47 +103,112 @@ func (m EditorModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.KeyDown:
-		if len(m.matches) > 0 {
+		if m.editor.Mode() == vimInsert && len(m.matches) > 0 {
 			m.selected = (m.selected + 1) % len(m.matches)
 			return m, nil
 		}
 	case tea.KeyEsc:
-		if len(m.matches) > 0 {
-			m.matches = nil
-			m.selected = 0
-			m.completionDismissed = true
-			return m, nil
-		}
-	case tea.KeySpace:
-		m.textarea.InsertRune(' ')
-		m.completionDismissed = false
-		m.refreshCompletions()
-		m.recalculateSize()
+		m.matches = nil
+		m.selected = 0
+		m.completionDismissed = true
+		m.editor.Handle("esc")
 		return m, nil
 	}
 
-	before := m.textarea.Value()
-	var cmd tea.Cmd
-	m.textarea, cmd = m.textarea.Update(msg)
-	if m.textarea.Value() != before {
+	before := m.editor.Value()
+	beforeMode := m.editor.Mode()
+	m.handleEditingKey(msg)
+	if m.editor.Value() != before || m.editor.Mode() == vimInsert && beforeMode != vimInsert {
 		m.completionDismissed = false
 	}
 	m.refreshCompletions()
-	m.recalculateSize()
-	return m, cmd
+	return m, nil
+}
+
+func (m *EditorModel) handleEditingKey(msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeySpace:
+		if m.editor.Mode() == vimInsert {
+			m.editor.InsertUserText(" ")
+		}
+	case tea.KeyBackspace:
+		m.editor.DeleteBeforeCursor()
+	case tea.KeyDelete:
+		if m.editor.Mode() == vimInsert {
+			m.editor.DeleteAtCursor()
+		} else {
+			m.editor.Handle("x")
+		}
+	case tea.KeyLeft:
+		m.moveCursor("left")
+	case tea.KeyRight:
+		m.moveCursor("right")
+	case tea.KeyUp:
+		m.moveCursor("up")
+	case tea.KeyDown:
+		m.moveCursor("down")
+	case tea.KeyHome:
+		m.moveCursor("home")
+	case tea.KeyEnd:
+		m.moveCursor("end")
+	case tea.KeyRunes:
+		if m.editor.Mode() == vimInsert {
+			m.editor.InsertUserText(string(msg.Runes))
+			return
+		}
+		for _, r := range msg.Runes {
+			m.editor.Handle(string(r))
+		}
+	}
+}
+
+func (m *EditorModel) moveCursor(key string) {
+	if m.editor.Mode() == vimInsert {
+		m.editor.MoveInsertCursor(key)
+		return
+	}
+	m.editor.Handle(key)
+}
+
+func (m *EditorModel) enterInsertForNewline() {
+	switch m.editor.Mode() {
+	case vimNormal:
+		m.editor.Handle("a")
+	case vimVisual:
+		m.editor.Handle("c")
+	}
+}
+
+func (m *EditorModel) refreshAfterEdit() {
+	m.completionDismissed = false
+	m.refreshCompletions()
 }
 
 func (m EditorModel) View() string {
 	if m.done {
 		return ""
 	}
-	parts := []string{m.textarea.View()}
+	parts := []string{m.editor.View(m.prompt, m.width, maxEditorHeight)}
 	if completions := renderCompletions(m.matches, m.selected, m.width); completions != "" {
 		parts = append(parts, completions)
 	}
-	hint := ansi.Truncate("Enter send · Ctrl+J newline · Ctrl+T transcript", m.width, "…")
-	parts = append(parts, footerStyle.Render(hint))
+	parts = append(parts, footerStyle.Render(ansi.Truncate(m.modeHint(), m.width, "…")))
 	return strings.Join(parts, "\n")
+}
+
+func (m EditorModel) modeHint() string {
+	label := "-- " + m.editor.Mode().String() + " --"
+	if m.editor.pending != 0 {
+		label += " " + string(m.editor.pending)
+	}
+	switch m.editor.Mode() {
+	case vimNormal:
+		return label + " · i insert · v visual · y/d/c + motion · p paste · Enter send"
+	case vimVisual:
+		return label + " · y yank · d delete · c change · Esc normal · Enter send"
+	default:
+		return label + " · Enter send · Esc normal · Ctrl+J newline · Ctrl+T transcript"
+	}
 }
 
 func (m EditorModel) Event() sessionrepl.InputEvent {
@@ -158,14 +216,20 @@ func (m EditorModel) Event() sessionrepl.InputEvent {
 }
 
 func (m EditorModel) Value() string {
-	return m.textarea.Value()
+	return m.editor.Value()
+}
+
+func (m EditorModel) Mode() vimMode {
+	return m.editor.Mode()
 }
 
 func (m *EditorModel) refreshCompletions() {
-	if m.completionDismissed {
+	if m.editor.Mode() != vimInsert || m.completionDismissed {
+		m.matches = nil
+		m.selected = 0
 		return
 	}
-	m.matches = sessionrepl.CompleteCommand(m.textarea.Value(), m.cursor())
+	m.matches = sessionrepl.CompleteCommand(m.editor.Value(), m.cursor())
 	if len(m.matches) == 0 {
 		m.selected = 0
 	} else if m.selected >= len(m.matches) {
@@ -174,27 +238,7 @@ func (m *EditorModel) refreshCompletions() {
 }
 
 func (m EditorModel) cursor() int {
-	if m.textarea.Line() != 0 {
-		return len([]rune(m.textarea.Value()))
-	}
-	info := m.textarea.LineInfo()
-	return info.StartColumn + info.ColumnOffset
-}
-
-func (m *EditorModel) recalculateSize() {
-	width := m.width
-	if width < 1 {
-		width = 1
-	}
-	m.textarea.SetWidth(width)
-	rows := m.textarea.LineCount() - 1 + m.textarea.LineInfo().Height
-	if rows < 1 {
-		rows = 1
-	}
-	if rows > maxEditorHeight {
-		rows = maxEditorHeight
-	}
-	m.textarea.SetHeight(rows)
+	return m.editor.Cursor()
 }
 
 var _ tea.Model = EditorModel{}

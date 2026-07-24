@@ -18,7 +18,11 @@ var (
 	footerStyle = lipgloss.NewStyle().Faint(true)
 	panelStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 
-	selectedStyle = lipgloss.NewStyle().Bold(true)
+	selectedStyle        = lipgloss.NewStyle().Bold(true)
+	normalCursorStyle    = lipgloss.NewStyle().Reverse(true)
+	insertCursorStyle    = lipgloss.NewStyle().Underline(true)
+	visualSelectionStyle = lipgloss.NewStyle().Reverse(true)
+	visualCursorStyle    = lipgloss.NewStyle().Reverse(true).Underline(true)
 
 	roleUserColor      = lipgloss.AdaptiveColor{Light: "4", Dark: "12"}
 	roleAssistantColor = lipgloss.AdaptiveColor{Light: "2", Dark: "10"}

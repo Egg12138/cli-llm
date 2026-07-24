@@ -152,6 +152,11 @@ keeps working. The transcript overlay path uses alternate screen mode and
 restores the terminal when it exits; the current line reader recognizes the
 Ctrl+T control character when it is delivered by the terminal input path.
 
+TTY prompts start in Vim INSERT mode for backward-compatible direct typing.
+Esc switches to NORMAL and `v` enters VISUAL; core motions, `cw`/`ce`,
+delete/change/yank operators, `yy`, `p/P`, and undo are available. The active
+mode is always shown in the prompt footer.
+
 ### Using plugins
 
 Once a plugin is installed on `PATH`, invoke it as a direct subcommand:

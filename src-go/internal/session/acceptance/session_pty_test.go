@@ -117,8 +117,26 @@ func TestSessionPTY(t *testing.T) {
 	h.WaitRawSequenceAfter(overlayCloseStart, "\x1b[?1049l", "Enter send")
 	h.WaitScreenContains("LONG-LINE-18")
 
+	vimStart := len(h.Raw())
+	h.Send("vim-seed", []byte("alpha beta"))
+	h.Send("vim-normal", []byte{0x1b})
+	h.WaitScreenContains("-- NORMAL --")
+	h.Send("vim-change-word", []byte("bcw"))
+	h.WaitScreenContains("-- INSERT --")
+	h.Send("vim-replacement", []byte("gamma"))
+	h.Send("vim-normal-again", []byte{0x1b})
+	h.WaitScreenContains("-- NORMAL --")
+	h.Send("vim-visual-select", []byte("0ve"))
+	h.WaitScreenContains("-- VISUAL --")
+	h.Send("vim-yank-paste-submit", []byte("y$p\r"))
+	h.WaitRawSequenceAfter(vimStart, "ACK", "Enter send")
+	h.waitUntil(func() bool {
+		users := h.mock.StreamingUsers()
+		return len(users) > 0 && users[len(users)-1] == "alpha gammaalpha"
+	}, "Vim-edited provider input")
+
 	h.Exit()
-	assertPersistedInputs(t, h.home, []string{"你好 世界", "第一行\nsecond line", "resize 保留", "cancel me"})
+	assertPersistedInputs(t, h.home, []string{"你好 世界", "第一行\nsecond line", "resize 保留", "cancel me", "alpha gammaalpha"})
 }
 
 func containsBrailleSpinner(value string) bool {

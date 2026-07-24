@@ -43,12 +43,12 @@ Options:
   -h, --help    Show this help message and exit
 
 Environment variables:
-  CLI_LLM_GO=y    Build the Go (EINO) binary instead of using Python
+  CLI_LLM_GO=n    Skip the Go (EINO) binary build (Go is built by default)
   CLI_LLM_RUST=y  Build the Rust binary instead of using Python
 
 Examples:
   ./install.sh
-  CLI_LLM_GO=y ./install.sh
+  CLI_LLM_GO=n ./install.sh
   CLI_LLM_RUST=y ./install.sh
 EOF
 	exit 0
@@ -170,13 +170,16 @@ fi
 if command_exists go && [ -f "$PROJECT_ROOT/src-go/go.mod" ]; then
 	echo ""
 	echo "  ┌─ Go binary ───────────────────────────────┐"
-	echo "  │  A Go (EINO) implementation is available.  │"
-	echo "  │  Set CLI_LLM_GO=y to build it.             │"
+	echo "  │  Building Go (EINO) binary by default.     │"
+	echo "  │  Set CLI_LLM_GO=n to skip.                 │"
 	echo "  └────────────────────────────────────────────┘"
 	echo ""
 
-	case "${CLI_LLM_GO:-}" in
-	y | Y | yes | YES | 1)
+	case "${CLI_LLM_GO:-y}" in
+	n | N | no | NO | 0)
+		info "Skipping Go build (CLI_LLM_GO=n)"
+		;;
+	*)
 		info "Building Go binary …"
 		(
 			cd "$PROJECT_ROOT/src-go"
@@ -189,9 +192,6 @@ if command_exists go && [ -f "$PROJECT_ROOT/src-go/go.mod" ]; then
 		else
 			warn "Go build produced no expected binary at $GO_BIN; skipping install."
 		fi
-		;;
-	*)
-		info "Skipping Go build (set CLI_LLM_GO=y to enable)"
 		;;
 	esac
 else
