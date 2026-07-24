@@ -90,6 +90,11 @@ func defaultRoleSet() map[string]SystemPrompt {
 			Description: "General purpose chat assistant with detailed explanations",
 			Temperature: 1.3,
 		},
+		"tldr": {
+			Content:     "You are a TLDR (Too Long; Didn't Read) assistant. Given a command-line tool or concept, produce a tldr-page-style cheat sheet:\n- Short description\n- 2-3 common usage examples\n- Key flags/options\n\nBe concise. No introductions or conclusions.",
+			Description: "TLDR-style concise cheat sheet for tools and commands",
+			Temperature: 0.2,
+		},
 		"meta": {
 			Content:     "You now act as a prompt generator using a Best-of-N methodology and must output compliant YAML only.",
 			Description: "Meta-prompt generator that creates optimized prompts using Best-of-N sampling methodology",

@@ -24,6 +24,7 @@ Comment style: less comment. remains comment only for some public function doc s
 | `0.2.2`  | Reconstructed codebase, uv migration, initial modularisation.                |
 | `0.2.3`  | Layered configuration loader (CLI > env > `~/.cli-llm/config.toml` > defaults), `--version` flag, sample config, CHANGELOG introduced. |
 | `0.2.4`  | `inspect` subcommand, toolcall service (presets + streaming + safe stdout), installer script (`install.sh`), raw-mode input handling (three modes), expanded test coverage (9 test files), provider dispatch thin layer. |
+| `0.4.2`  | Prefix slash-command completion with inline descriptions, multi-line Bubble Tea textarea editor, PTY/VT acceptance suite, main-buffer rendering, TTY status cleanup, Ctrl+C turn-cancel fix. |
 
 > No public PyPI release — all tags are internal milestones.
 
@@ -127,9 +128,13 @@ bc6|| Multi-Turn Session Mode | **0.4.0 goal (Go only)** | Build `llm-session` p
 - [x] Simplified session system prompt: no tool calls; branch/checkpoint/head/session state stays local and is not sent to the model
 - [x] Auto session title generation from the first user message; fresh sessions no longer prompt for a session name
 - [x] Go-only: Python `src/` unchanged
-- [ ] High priority: slash commands need completion plus inline descriptions (`/branches`, `/switch`, `/checkpoint`, `/exit`, and future commands)
-- [x] High priority: show dynamic status while the model is thinking/stream setup is pending, so users can distinguish blocked I/O, waiting for generation, and normal response streaming
-- [x] **TUI for the Ctrl+T transcript overlay** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.
+- [x] **High priority:** add `/help`; it must list every enabled slash command with usage and a concise description
+- [x] **High priority:** add prefix-matching slash-command completion with inline descriptions; fuzzy and argument completion are out of scope for v1
+- [x] **High priority / bug:** replace the current single-line input with a real multi-line editor that preserves spaces and UTF-8/CJK input; Enter submits, while Shift+Enter or Ctrl+J inserts a newline
+- [x] **High priority / bug:** render complete multi-line assistant responses with preserved newlines, terminal-width wrapping, and native scrollback; long responses must not be clipped to one line or one screen
+- [x] **High priority / bug:** make the thinking/stream-start spinner refresh in place on one logical terminal row and clear it before response content; spinner frames must never accumulate across the line
+- [x] **High priority / verification:** exercise the built `llm-session` binary through a PTY, capture its real ANSI byte stream and reconstructed terminal screen, and assert user-visible behavior instead of inferring it only from `View()` or source code
+- [x] **Ctrl+T transcript overlay foundation** (Bubble Tea + bubbles + lipgloss): scrollable branch-aware viewport, role/markdown highlighting, branch tree/list panel, and copy-selected-dialog-to-clipboard (OSC 52). This does not mean the main input/response TUI is release-ready. Design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Decided 2026-06-22 — see "TUI Implementation" below.
 - [ ] `/export` — dump current branch full history to text file
 - [ ] `/new` — start a fresh session
 - [ ] `@filename` file reference (with fuzzy completion) — inject content into context
@@ -181,11 +186,17 @@ Full design: `docs/plans/2026-06-22-llm-session-tui-design.md`. Summary of the l
 
 **Overlay capabilities (v1):** scrollable viewport (reuses existing offset/maxOffset logic), user/assistant role coloring + glamour markdown, a branch tree/list panel (`ListBranches`, current branch marked, select-to-preview), and **copy selected dialog to the system clipboard via OSC 52** (`ansi.SetClipboard`, already a transitive dep — works over SSH, no `xclip`/`pbcopy`, and is a byte sequence so it stays `bytes.Buffer`-testable). Full-text search is deferred.
 
-**Status indicator (main buffer, Follow-Up 3):** lightweight spinner with states `thinking` / `waiting for stream` / `streaming`, cleared on the first streamed token; deterministic single-line writes in non-TTY. Status text is never persisted as a session entry.
+**Main input editor (release blocker):** the editor must accept ordinary spaces and arbitrary UTF-8 text, including Chinese, without dropping or joining characters. It must be width-aware and support visual wrapping. Enter submits the whole buffer; Shift+Enter and Ctrl+J insert a newline. Submitted text must retain its spaces and line breaks exactly when it is sent to the model and persisted.
+
+**Main response rendering (release blocker):** streaming output must preserve model-provided newlines and wrap long lines to the current terminal width. A response may span any number of terminal rows and must remain available through native scrollback; it must never be truncated merely because it exceeds one row or the visible terminal height.
+
+**Status indicator:** the `thinking` / `waiting for stream` / `streaming` lifecycle now uses one synchronously cleared TTY row. Frames render with carriage-return plus full-row erase, the ticker is stopped before response/error/cancellation output, and non-TTY output remains deterministic. Status text is never persisted as a session entry.
 
 **Integration — new `internal/session/tui` package implementing the existing `repl.TranscriptOverlay` interface.** `repl.Loop` is unchanged; `runner.go` swaps `transcriptOverlay{}` for `tui.NewOverlay(...)`. The old pure-ANSI `internal/session/terminal` package is kept (its alt-screen ANSI assertions still apply) and can be retired later.
 
-**Tests:** pure Model unit tests (drive `Update`, assert `View()` snapshot — layout bounds, navigation within `[0, maxOffset]`, branch-switch isolation asserting the *other* branch's content is absent, OSC 52 clipboard bytes) as primary; `teatest` for a few black-box event-loop flows. Keeps the headless, no-real-TTY philosophy.
+**Verification strategy:** pure Model tests remain useful for state transitions, bounds, branch isolation, and OSC 52 bytes, but they are not sufficient evidence of terminal behavior. Automated acceptance tests must build and launch the real `llm-session` executable under a PTY at fixed terminal sizes, drive it with real key byte sequences, use a deterministic mock streaming provider, and capture both the raw ANSI byte stream and screen frames reconstructed by a VT-compatible terminal emulator. On failure, retain the input trace, raw ANSI capture, and normalized screen snapshot as artifacts.
+
+The PTY suite must cover `/help`, prefix completion, spaces, UTF-8/Chinese text, multi-line input through Shift+Enter or Ctrl+J, long multi-line streamed responses, in-place spinner refresh, cancellation, terminal resize, and clean restoration after the Ctrl+T overlay. Assertions must inspect captured user-visible output: no spinner trail, no lost whitespace or Unicode, no missing response lines, and no stale overlay/status rows. Before marking the TUI release-ready, also perform and record one live-provider smoke run in a real terminal. Source inspection or direct `View()` snapshots alone cannot close these bugs.
 
 
 ### v1 MVP Scope — Must Work End-to-End
@@ -204,8 +215,12 @@ Only these items need to work for v1 to ship. Everything else is deferred to v1.
 | 8 | **`/exit` (save)** | Write session to disk and exit. |
 | 9 | **Auto session titling** | Sub-request to LLM on first message, stores title in `session_info`. Makes `/resume` usable. |
 | 10 | **Context compression** | When token count exceeds 200k, summarize old entries into a `compaction` entry. Keeps the session usable for long conversations. |
-| 11 | **Slash command help/completion** | Slash commands expose completions and descriptions so the REPL is discoverable without reading docs. |
-| 12 | **Thinking status** | Show a lightweight dynamic status while waiting for model response or stream startup. |
+| 11 | **`/help`** | Lists every enabled slash command with its usage and concise description so the REPL is discoverable without external docs. |
+| 12 | **Slash command completion** | Prefix matching for command names, with inline descriptions. Fuzzy matching and argument completion are deferred. |
+| 13 | **Multi-line UTF-8 input editor** | Preserves spaces and Chinese/other Unicode; Enter submits and Shift+Enter or Ctrl+J inserts a newline. |
+| 14 | **Complete response rendering** | Preserves model newlines, wraps to terminal width, and emits the entire streamed response into native scrollback. |
+| 15 | **Thinking status** | Shows one in-place status row while waiting and removes it cleanly before response, error, or cancellation output. |
+| 16 | **Real terminal-output verification** | PTY tests capture the built binary's raw ANSI stream and reconstructed screen; a recorded live-provider terminal smoke test is required before release-ready status. |
 
 **Explicitly deferred:**
 - `/export` (can copy the JSONL file manually for now)
@@ -323,6 +338,9 @@ Reference: pi TUI editor's paste implementation.
 
 | Command | Description |
 |---------|-------------|
+| `/help` | List every enabled slash command, including aliases, usage, and a concise inline description. Help content and completion candidates must come from the same command registry so they cannot drift. |
+| `/exit` | Save the current session and exit. |
+| `/transcript` (`/t`) | Open the transcript view; Ctrl+T is the keyboard shortcut. |
 | `/export [file]` **(v1.1)** | Export current branch to a human-readable text file. Default filename: `session-{name}-{branch}.txt` |
 | `/new` **(v1.1)** | Start a fresh session. |
 | `/branches` | List branches and parent/child relationships. Do not show raw `head_id` in the default output; reads pre-computed topology, not the full entry tree. |
@@ -333,6 +351,8 @@ Reference: pi TUI editor's paste implementation.
  |
 | `/rename <branch> <new>` **(v1.1)** | Rename a branch. |
 | `/checkpoint <name>` | Label the current node with a human-readable name. Creates a named branch from the current position. |
+
+**Completion contract (v1):** completion is active only for the slash-command name at the beginning of the input. The candidate set is the enabled v1 commands above, excluding commands marked v1.1. Matching is prefix-based and preserves the user's current argument text. The menu shows command usage plus its description; a unique match can be completed directly. Fuzzy matching, command-history ranking, and argument completion are deferred.
 
 ---
 

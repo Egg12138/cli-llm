@@ -22,7 +22,7 @@ type ExecutionPlan struct {
 }
 
 // Version is the current cli-llm release, kept in sync with pyproject.toml.
-const Version = "0.4.1"
+const Version = "0.4.2"
 
 var (
 	builtinSubcommands = []string{"chat", "inspect", "provider", "toolcall"}

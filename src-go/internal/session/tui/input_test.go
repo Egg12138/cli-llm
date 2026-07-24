@@ -34,10 +34,22 @@ func TestInputInsertAtPosition(t *testing.T) {
 func TestInputInsertNonPrintable(t *testing.T) {
 	var in textInput
 	in.Insert(0x00)
-	in.Insert('\n')
 	in.Insert('\t')
 	if in.Len() != 0 {
-		t.Fatalf("expected empty buffer, got %d", in.Len())
+		t.Fatalf("expected empty buffer for control chars, got %d", in.Len())
+	}
+}
+
+func TestInputInsertNewline(t *testing.T) {
+	var in textInput
+	in.Insert('a')
+	in.Insert('\n')
+	in.Insert('b')
+	if in.Value() != "a\nb" {
+		t.Fatalf("expected 'a\\nb', got %q", in.Value())
+	}
+	if in.LineCount() != 2 {
+		t.Fatalf("LineCount = %d, want 2", in.LineCount())
 	}
 }
 

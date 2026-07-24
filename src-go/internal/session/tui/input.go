@@ -12,7 +12,7 @@ type textInput struct {
 }
 
 func (t *textInput) Insert(r rune) {
-	if !unicode.IsPrint(r) {
+	if !unicode.IsPrint(r) && r != '\n' {
 		return
 	}
 	t.buffer = append(t.buffer[:t.cursor], append([]rune{r}, t.buffer[t.cursor:]...)...)
@@ -64,43 +64,74 @@ func (t *textInput) Reset() {
 }
 
 func (t *textInput) View(width int) string {
-	prompt := "> "
-	avail := width - lipgloss.Width(prompt)
+	cursorStyle := lipgloss.NewStyle().Reverse(true)
+	firstPrompt := "> "
+	contPrompt := "  "
+	avail := width - lipgloss.Width(firstPrompt)
 	if avail < 2 {
 		avail = 2
 	}
 
-	var visible []rune
-	cursorOffset := 0
-	if len(t.buffer) <= avail-1 {
-		visible = t.buffer
-		cursorOffset = len(prompt) + len(t.buffer)
-	} else {
-		// Scroll visible window so cursor is visible
-		end := t.cursor + (avail - 1)
-		if end > len(t.buffer) {
-			end = len(t.buffer)
-		}
-		start := end - (avail - 1)
-		if start < 0 {
-			start = 0
-			end = start + avail - 1
-			if end > len(t.buffer) {
-				end = len(t.buffer)
+	// Split buffer into logical lines on '\n', tracking cursor position
+	var lines []string
+	cursorLine, cursorCol := -1, -1
+
+	start := 0
+	for i, r := range t.buffer {
+		if r == '\n' {
+			lines = append(lines, string(t.buffer[start:i]))
+			if cursorLine < 0 && t.cursor <= i {
+				cursorLine = len(lines) - 1
+				cursorCol = t.cursor - start
 			}
+			start = i + 1
 		}
-		visible = t.buffer[start:end]
-		cursorOffset = len(prompt) + (t.cursor - start)
+	}
+	// Last line
+	lines = append(lines, string(t.buffer[start:]))
+	if cursorLine < 0 {
+		cursorLine = len(lines) - 1
+		cursorCol = t.cursor - start
 	}
 
-	text := string(visible)
-	cursorStyle := lipgloss.NewStyle().Reverse(true)
-	cursorChar := " "
+	// Render each line, placing the cursor on the correct one
+	var result string
+	for i, line := range lines {
+		if i > 0 {
+			result += "\n"
+		}
+		prompt := firstPrompt
+		if i > 0 {
+			prompt = contPrompt
+		}
+		result += prompt
+		if i == cursorLine {
+			// Render with cursor at cursorCol position
+			if cursorCol >= len([]rune(line)) {
+				result += line + cursorStyle.Render(" ")
+			} else {
+				runes := []rune(line)
+				result += string(runes[:cursorCol]) + cursorStyle.Render(string(runes[cursorCol])) + string(runes[cursorCol+1:])
+			}
+		} else {
+			result += line
+		}
+	}
+	return result
+}
 
-	before := text[:cursorOffset-len(prompt)]
-	after := text[cursorOffset-len(prompt):]
-
-	return prompt + before + cursorStyle.Render(cursorChar) + after
+// LineCount returns the number of display lines (based on '\n' in buffer).
+func (t *textInput) LineCount() int {
+	if len(t.buffer) == 0 {
+		return 1
+	}
+	count := 1
+	for _, r := range t.buffer {
+		if r == '\n' {
+			count++
+		}
+	}
+	return count
 }
 
 func (t *textInput) Len() int {

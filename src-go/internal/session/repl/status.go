@@ -20,14 +20,26 @@ func (r *PlainReporter) Set(s runtime.Status) {
 func (r *PlainReporter) Clear() {}
 
 type TTYReporter struct {
-	mu     sync.Mutex
-	status runtime.Status
-	done   chan struct{}
-	out    io.Writer
+	mu       sync.Mutex
+	status   runtime.Status
+	done     chan struct{}
+	stopped  chan struct{}
+	stopOnce sync.Once
+	out      io.Writer
+	interval time.Duration
 }
 
 func NewTTYReporter(out io.Writer) *TTYReporter {
-	r := &TTYReporter{out: out, done: make(chan struct{})}
+	return newTTYReporter(out, 100*time.Millisecond)
+}
+
+func newTTYReporter(out io.Writer, interval time.Duration) *TTYReporter {
+	r := &TTYReporter{
+		out:      out,
+		done:     make(chan struct{}),
+		stopped:  make(chan struct{}),
+		interval: interval,
+	}
 	go r.run()
 	return r
 }
@@ -39,37 +51,44 @@ func (r *TTYReporter) Set(s runtime.Status) {
 }
 
 func (r *TTYReporter) Clear() {
-	select {
-	case <-r.done:
-		return
-	default:
+	r.stopOnce.Do(func() {
 		close(r.done)
-	}
-	fmt.Fprint(r.out, "\r\x1b[K")
+		<-r.stopped
+		fmt.Fprint(r.out, "\r\x1b[2K")
+	})
 }
 
 func (r *TTYReporter) run() {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
+	defer close(r.stopped)
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	i := 0
 	for {
 		select {
+		case <-r.done:
+			return
+		default:
+		}
+		select {
+		case <-r.done:
+			return
 		case <-ticker.C:
+			select {
+			case <-r.done:
+				return
+			default:
+			}
 			r.mu.Lock()
 			label := statusLabel(r.status)
 			r.mu.Unlock()
 			frame := frames[i%len(frames)]
 			i++
-			fmt.Fprintf(r.out, "\r%s %s\x1b[K", frame, label)
-		case <-r.done:
-			return
+			fmt.Fprintf(r.out, "\r\x1b[2K%s %s", frame, label)
 		}
 	}
 }
 
-// nopCloser implements io.Closer with a no-op, so TTYReporter can be used
-// as a stoppable resource.
 func (r *TTYReporter) Close() error {
 	r.Clear()
 	return nil

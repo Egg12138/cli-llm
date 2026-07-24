@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -26,6 +27,31 @@ type fakeChatModel struct {
 	streamErr error
 	chunks    []string
 	inputs    [][]*schema.Message
+}
+
+type eventLog struct {
+	events []string
+}
+
+type eventWriter struct {
+	log *eventLog
+}
+
+func (w eventWriter) Write(p []byte) (int, error) {
+	w.log.events = append(w.log.events, "write:"+string(p))
+	return len(p), nil
+}
+
+type eventReporter struct {
+	log *eventLog
+}
+
+func (r eventReporter) Set(status Status) {
+	r.log.events = append(r.log.events, fmt.Sprintf("status:%d", status))
+}
+
+func (r eventReporter) Clear() {
+	r.log.events = append(r.log.events, "clear")
 }
 
 func (m *fakeChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.Message, error) {
@@ -106,6 +132,35 @@ func TestChatTurnAppendsUserAssistantAndCheckpoint(t *testing.T) {
 	}
 }
 
+func TestChatTurnPreservesStreamedNewlinesWithoutAddingAnother(t *testing.T) {
+	t.Parallel()
+
+	state := graph.NewState(nil)
+	store := &fakeAppendStore{}
+	chatModel := &fakeChatModel{chunks: []string{"first\n", "second\nthird\n"}}
+	var out bytes.Buffer
+
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:  "show lines",
+		State:  state,
+		Store:  store,
+		Writer: &out,
+		Model:  chatModel,
+		Now:    func() time.Time { return time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("RunChatTurn returned error: %v", err)
+	}
+
+	const want = "first\nsecond\nthird\n"
+	if got := out.String(); got != want {
+		t.Fatalf("streamed output = %q, want %q", got, want)
+	}
+	if got := mustMessageData(t, store.entries[1]).Content; got != want {
+		t.Fatalf("persisted assistant content = %q, want %q", got, want)
+	}
+}
+
 func TestChatTurnPersistsCurrentBranchHead(t *testing.T) {
 	t.Parallel()
 
@@ -179,6 +234,41 @@ func TestChatTurnReportsStatusInOrder(t *testing.T) {
 	}
 }
 
+func TestChatTurnClearsStatusBeforeFirstResponseWrite(t *testing.T) {
+	t.Parallel()
+
+	log := &eventLog{}
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:  "hi",
+		State:  graph.NewState(nil),
+		Store:  &fakeAppendStore{},
+		Writer: eventWriter{log: log},
+		Model:  &fakeChatModel{chunks: []string{"first", "second"}},
+		Status: eventReporter{log: log},
+		Now:    func() time.Time { return time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("RunChatTurn returned error: %v", err)
+	}
+
+	clearIndex := -1
+	firstWriteIndex := -1
+	for i, event := range log.events {
+		if event == "clear" && clearIndex == -1 {
+			clearIndex = i
+		}
+		if event == "write:first" && firstWriteIndex == -1 {
+			firstWriteIndex = i
+		}
+	}
+	if clearIndex == -1 || firstWriteIndex == -1 || clearIndex > firstWriteIndex {
+		t.Fatalf("status must clear before the first response write, got %v", log.events)
+	}
+	if clearCount := countEvents(log.events, "clear"); clearCount != 1 {
+		t.Fatalf("Clear called %d times, want once: %v", clearCount, log.events)
+	}
+}
+
 func TestChatTurnFailedModelLeavesNoAssistantOrCheckpoint(t *testing.T) {
 	t.Parallel()
 
@@ -213,4 +303,14 @@ func mustMessageData(t *testing.T, entry model.Entry) model.MessageData {
 		t.Fatalf("MessageData returned error: %v", err)
 	}
 	return data
+}
+
+func countEvents(events []string, target string) int {
+	count := 0
+	for _, event := range events {
+		if event == target {
+			count++
+		}
+	}
+	return count
 }

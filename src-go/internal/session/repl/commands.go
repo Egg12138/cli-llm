@@ -11,13 +11,14 @@ import (
 type CommandKind string
 
 const (
-	CommandChat        CommandKind = "chat"
-	CommandExit        CommandKind = "exit"
-	CommandBranches    CommandKind = "branches"
-	CommandSwitch      CommandKind = "switch"
-	CommandCheckpoint  CommandKind = "checkpoint"
-	CommandTranscript  CommandKind = "transcript"
-	CommandUnknown     CommandKind = "unknown"
+	CommandChat       CommandKind = "chat"
+	CommandHelp       CommandKind = "help"
+	CommandExit       CommandKind = "exit"
+	CommandBranches   CommandKind = "branches"
+	CommandSwitch     CommandKind = "switch"
+	CommandCheckpoint CommandKind = "checkpoint"
+	CommandTranscript CommandKind = "transcript"
+	CommandUnknown    CommandKind = "unknown"
 )
 
 type Action string
@@ -41,20 +42,11 @@ func ParseLine(line string) Command {
 		return Command{Kind: CommandChat, Line: line}
 	}
 	name, arg, _ := strings.Cut(trimmed, " ")
-	switch name {
-	case "/exit":
-		return Command{Kind: CommandExit, Line: line}
-	case "/branches":
-		return Command{Kind: CommandBranches, Line: line}
-	case "/switch":
-		return Command{Kind: CommandSwitch, Arg: strings.TrimSpace(arg), Line: line}
-	case "/checkpoint":
-		return Command{Kind: CommandCheckpoint, Arg: strings.TrimSpace(arg), Line: line}
-	case "/t", "/transcript":
-		return Command{Kind: CommandTranscript, Line: line}
-	default:
+	spec, ok := LookupCommand(name)
+	if !ok {
 		return Command{Kind: CommandUnknown, Arg: strings.TrimPrefix(name, "/"), Line: line}
 	}
+	return Command{Kind: spec.Kind, Arg: strings.TrimSpace(arg), Line: line}
 }
 
 func ExecuteCommand(state *graph.State, command Command, out io.Writer) (Action, error) {
@@ -65,6 +57,9 @@ func ExecuteCommandWithStore(state *graph.State, command Command, out io.Writer,
 	switch command.Kind {
 	case CommandChat:
 		return ActionChat, nil
+	case CommandHelp:
+		WriteHelp(out)
+		return ActionContinue, nil
 	case CommandExit:
 		return ActionExit, nil
 	case CommandBranches:

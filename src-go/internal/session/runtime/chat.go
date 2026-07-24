@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Egg12138/cli-llm/src-go/internal/session/graph"
@@ -44,7 +45,15 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	if reporter == nil {
 		reporter = nopReporter{}
 	}
-	defer reporter.Clear()
+	statusCleared := false
+	clearStatus := func() {
+		if statusCleared {
+			return
+		}
+		reporter.Clear()
+		statusCleared = true
+	}
+	defer clearStatus()
 
 	now := time.Now
 	if req.Now != nil {
@@ -87,7 +96,7 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	reporter.Set(StatusWaitingStream)
 
 	streamingReported := false
-	content := ""
+	var content strings.Builder
 	for {
 		chunk, err := stream.Recv()
 		if err != nil {
@@ -101,22 +110,24 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 		}
 		if !streamingReported {
 			reporter.Set(StatusStreaming)
+			clearStatus()
 			streamingReported = true
 		}
-		content += chunk.Content
+		content.WriteString(chunk.Content)
 		if req.Writer != nil {
 			if _, err := fmt.Fprint(req.Writer, chunk.Content); err != nil {
 				return err
 			}
 		}
 	}
-	if content != "" && req.Writer != nil {
+	response := content.String()
+	if response != "" && !strings.HasSuffix(response, "\n") && req.Writer != nil {
 		if _, err := fmt.Fprintln(req.Writer); err != nil {
 			return err
 		}
 	}
 
-	assistantEntry, err := model.NewMessage(userEntry.ID, "assistant", content, now())
+	assistantEntry, err := model.NewMessage(userEntry.ID, "assistant", response, now())
 	if err != nil {
 		return err
 	}

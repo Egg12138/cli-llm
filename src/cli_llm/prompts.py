@@ -102,6 +102,17 @@ Each code block should be closed to 3 empty lines''',
         temperature=0.6,
     )
 
+    TLDR_PROMPT = SystemPrompt(
+        content='''You are a TLDR (Too Long; Didn't Read) assistant. Given a command-line tool or concept, produce a tldr-page-style cheat sheet:
+- Short description
+- 2-3 common usage examples
+- Key flags/options
+
+Be concise. No introductions or conclusions.''',
+        description="TLDR-style concise cheat sheet for tools and commands",
+        temperature=0.2,
+    )
+
     META_PROMPT = SystemPrompt(
         content='''
     # 作用：把一句汉语/英语需求拆成 5 份候选 Prompt，刷 reward 后一键返回最优。
@@ -193,6 +204,7 @@ output_schema: |
         'creative': CREATIVE_PROMPT,
         'general': SMART_PROMPT,
         'normal': CHAT_PROMPT,
+        'tldr': TLDR_PROMPT,
         'meta': META_PROMPT,
     }
 

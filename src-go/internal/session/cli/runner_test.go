@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -14,6 +15,51 @@ import (
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
+
+func TestRunInteractiveSessionUsesMainBuffer(t *testing.T) {
+	store := &fakeSessionStore{}
+	var out bytes.Buffer
+	d := RunnerDeps{
+		Stdin:  bytes.NewBufferString("/exit\r"),
+		Stdout: &out,
+		Stderr: io.Discard,
+	}
+	req := StartREPLRequest{
+		Name:  "test-session",
+		State: graph.NewState(nil),
+		Store: store,
+		Model: &fakeProviderModel{model: "test-model"},
+		Config: config.AppConfig{
+			DefaultModel: "test-model",
+		},
+	}
+
+	if err := runInteractiveSession(req, d); err != nil {
+		t.Fatalf("runInteractiveSession returned error: %v", err)
+	}
+	if bytes.Contains(out.Bytes(), []byte("\x1b[?1049h")) {
+		t.Fatalf("interactive session entered alternate screen: %q", out.Bytes())
+	}
+}
+
+func TestRunChatTurnWithInterruptReturnsToTheREPLAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var stderr bytes.Buffer
+
+	err := runChatTurnWithInterrupt(ctx, &stderr, func(turnCtx context.Context) error {
+		if turnCtx.Err() == nil {
+			t.Fatal("turn context was not cancelled")
+		}
+		return turnCtx.Err()
+	})
+	if err != nil {
+		t.Fatalf("runChatTurnWithInterrupt returned error: %v", err)
+	}
+	if got := stderr.String(); got != "cancelled\n" {
+		t.Fatalf("cancellation output = %q, want %q", got, "cancelled\n")
+	}
+}
 
 type fakeSessionStore struct {
 	entries []model.Entry

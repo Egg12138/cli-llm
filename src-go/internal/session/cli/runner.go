@@ -3,9 +3,11 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,7 +23,6 @@ import (
 	sessiontui "github.com/Egg12138/cli-llm/src-go/internal/session/tui"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"golang.org/x/term"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type SessionStore interface {
@@ -95,7 +96,7 @@ func (r SessionRunner) Run(options Options) error {
 		Store:  store,
 		Model:  chatModel,
 		Config: r.deps.Config,
-			NoTUI:  options.NoTUI,
+		NoTUI:  options.NoTUI,
 	})
 }
 
@@ -170,14 +171,8 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	}
 	if d.StartREPLFunc == nil {
 		d.StartREPLFunc = func(req StartREPLRequest) error {
-			useTUI := !req.NoTUI
-			if f, ok := d.Stdout.(*os.File); ok {
-				useTUI = useTUI && term.IsTerminal(int(f.Fd()))
-			} else {
-				useTUI = false
-			}
-			if useTUI {
-				return runTUISession(req)
+			if !req.NoTUI && isTerminalReader(d.Stdin) && isTerminalWriter(d.Stdout) {
+				return runInteractiveSession(req, d)
 			}
 			return runREPLSession(req, d)
 		}
@@ -185,11 +180,34 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	return d
 }
 
+func isTerminalReader(in io.Reader) bool {
+	file, ok := in.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+func isTerminalWriter(out io.Writer) bool {
+	file, ok := out.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
 func pickStatusReporter(out io.Writer) sessionruntime.StatusReporter {
 	if f, ok := out.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		return sessionrepl.NewTTYReporter(out)
 	}
 	return &sessionrepl.PlainReporter{Out: out}
+}
+
+func runChatTurnWithInterrupt(parent context.Context, stderr io.Writer, run func(context.Context) error) error {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	defer stop()
+	if err := run(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(stderr, "cancelled")
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func generatedSessionName() string {
@@ -252,48 +270,46 @@ func (r *lineReader) ReadEvent(prompt string) sessionrepl.InputEvent {
 	return sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: line}
 }
 
-func runTUISession(req StartREPLRequest) error {
-	m := sessiontui.NewSessionModel(sessiontui.SessionConfig{
-		State:       req.State,
-		Store:       req.Store,
-		Model:       req.Model,
-		TitleModel:  req.Model,
-		ModelName:   req.Config.DefaultModel,
-		SessionName: req.Name,
-	})
-	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
-	return err
+func runInteractiveSession(req StartREPLRequest, d RunnerDeps) error {
+	return runSessionLoop(req, d, sessiontui.NewEditorReader(d.Stdin, d.Stdout))
 }
 
 func runREPLSession(req StartREPLRequest, d RunnerDeps) error {
+	return runSessionLoop(req, d, newLineReader(d.Stdin))
+}
+
+func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.InputReader) error {
 	sessionName := req.Name
 	runner := sessionrepl.ChatRunner(chatRunnerFunc(func(input string) error {
-		return sessionruntime.RunChatTurn(context.Background(), sessionruntime.ChatTurnRequest{
-			Input:       input,
-			State:       req.State,
-			Store:       req.Store,
-			Writer:      d.Stdout,
-			Model:       req.Model,
-			TitleModel:  req.Model,
-			SessionName: sessionName,
-			ModelName:   req.Config.DefaultModel,
-			OnTitle: func(result sessionruntime.TitleResult) error {
-				nextName := sessionstore.NameFromTitle(result.Title)
-				if concrete, ok := req.Store.(interface {
-					AvailableName(string) string
-				}); ok {
-					nextName = concrete.AvailableName(result.Title)
-				}
-				if err := req.Store.Rename(nextName); err != nil {
-					return err
-				}
-				sessionName = nextName
-				return nil
-			},
+		return runChatTurnWithInterrupt(context.Background(), d.Stderr, func(ctx context.Context) error {
+			return sessionruntime.RunChatTurn(ctx, sessionruntime.ChatTurnRequest{
+				Input:       input,
+				State:       req.State,
+				Store:       req.Store,
+				Writer:      d.Stdout,
+				Model:       req.Model,
+				TitleModel:  req.Model,
+				SessionName: sessionName,
+				ModelName:   req.Config.DefaultModel,
+				Status:      pickStatusReporter(d.Stderr),
+				OnTitle: func(result sessionruntime.TitleResult) error {
+					nextName := sessionstore.NameFromTitle(result.Title)
+					if concrete, ok := req.Store.(interface {
+						AvailableName(string) string
+					}); ok {
+						nextName = concrete.AvailableName(result.Title)
+					}
+					if err := req.Store.Rename(nextName); err != nil {
+						return err
+					}
+					sessionName = nextName
+					return nil
+				},
+			})
 		})
 	}))
 	code := sessionrepl.Loop(sessionrepl.LoopOptions{
-		Reader:  newLineReader(d.Stdin),
+		Reader:  reader,
 		Chat:    runner,
 		State:   req.State,
 		Stdout:  d.Stdout,

@@ -143,6 +143,70 @@ func TestSessionModelWindowResize(t *testing.T) {
 	}
 }
 
+func TestSessionModelSpaceKey(t *testing.T) {
+	m := NewSessionModel(SessionConfig{
+		State: graph.NewState(nil),
+	})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
+	m = cast(next)
+	if cmd != nil {
+		t.Fatalf("expected nil cmd after typing, got %v", cmd)
+	}
+	next, _ = m.updateFromKey(tea.KeySpace)
+	m = cast(next)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("world")})
+	m = cast(next)
+	if m.input.Value() != "hello world" {
+		t.Fatalf("input = %q, want 'hello world'", m.input.Value())
+	}
+}
+
+func TestSessionModelCtrlJInsertsNewline(t *testing.T) {
+	m := NewSessionModel(SessionConfig{
+		State: graph.NewState(nil),
+	})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line1")})
+	m = cast(next)
+	next, _ = m.updateFromKey(tea.KeyCtrlJ)
+	m = cast(next)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line2")})
+	m = cast(next)
+	if m.input.Value() != "line1\nline2" {
+		t.Fatalf("input = %q, want 'line1\\nline2'", m.input.Value())
+	}
+	if m.input.LineCount() != 2 {
+		t.Fatalf("LineCount = %d, want 2", m.input.LineCount())
+	}
+}
+
+func TestSessionModelSpinnerDoesNotAccumulate(t *testing.T) {
+	m := NewSessionModel(SessionConfig{
+		State: graph.NewState(nil),
+	})
+	m.busy = true
+	m.statusLabel = "Thinking"
+	m.statusText = spinnerFrames[0] + " Thinking"
+
+	// Simulate several ticks
+	for i := 0; i < 5; i++ {
+		next, _ := m.Update(tickMsg{})
+		m = cast(next)
+	}
+
+	// statusText should only have one spinner frame + label, not accumulated frames
+	if !strings.Contains(m.statusText, "Thinking") {
+		t.Fatalf("statusText missing 'Thinking': %q", m.statusText)
+	}
+	// Count how many spinner frames appear in statusText
+	frameCount := 0
+	for _, f := range spinnerFrames {
+		frameCount += strings.Count(m.statusText, f)
+	}
+	if frameCount != 1 {
+		t.Fatalf("statusText has %d spinner frames, want 1: %q", frameCount, m.statusText)
+	}
+}
+
 func TestSessionModelBranchesCommand(t *testing.T) {
 	m := NewSessionModel(SessionConfig{
 		State: graph.NewState(nil),

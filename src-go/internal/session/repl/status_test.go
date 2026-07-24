@@ -3,11 +3,37 @@ package repl
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Egg12138/cli-llm/src-go/internal/session/runtime"
 )
+
+type synchronizedBuffer struct {
+	mu        sync.Mutex
+	buffer    bytes.Buffer
+	wrote     chan struct{}
+	wroteOnce sync.Once
+}
+
+func newSynchronizedBuffer() *synchronizedBuffer {
+	return &synchronizedBuffer{wrote: make(chan struct{})}
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n, err := b.buffer.Write(p)
+	b.wroteOnce.Do(func() { close(b.wrote) })
+	return n, err
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
 
 func TestPlainReporterWritesDeterministicLines(t *testing.T) {
 	var buf bytes.Buffer
@@ -56,5 +82,35 @@ func TestTTYReporterAnimatesAndClears(t *testing.T) {
 	if len(lines) == 1 && strings.Contains(output, "\r") {
 		// TTYReporter uses \r to overwrite, so all output is on one displayed line
 		// Just verify the content
+	}
+}
+
+func TestTTYReporterClearWaitsForAnimationAndErasesTheRow(t *testing.T) {
+	out := newSynchronizedBuffer()
+	r := newTTYReporter(out, time.Millisecond)
+	r.Set(runtime.StatusThinking)
+
+	select {
+	case <-out.wrote:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for spinner frame")
+	}
+
+	r.Clear()
+	afterClear := out.String()
+	time.Sleep(10 * time.Millisecond)
+	if got := out.String(); got != afterClear {
+		t.Fatalf("spinner wrote after Clear: before %q, after %q", afterClear, got)
+	}
+	if !strings.HasSuffix(afterClear, "\r\x1b[2K") {
+		t.Fatalf("Clear did not erase the complete status row: %q", afterClear)
+	}
+	if !strings.Contains(afterClear, "\r\x1b[2K") {
+		t.Fatalf("spinner frame did not begin by replacing one logical row: %q", afterClear)
+	}
+
+	r.Clear()
+	if got := out.String(); got != afterClear {
+		t.Fatalf("second Clear wrote more bytes: before %q, after %q", afterClear, got)
 	}
 }

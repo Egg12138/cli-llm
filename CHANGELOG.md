@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/) and uses semantic versioning when we are ready for public releases.  
 Until then, entries describe internal milestones so the team can track progress.
 
+## [Unreleased]
+
+## [0.4.2] – 2026-07-24
+
+### Added
+- Registry-driven `/help` and prefix slash-command completion with inline usage descriptions.
+- Inline Bubbles textarea editor with exact spaces/UTF-8 preservation, Ctrl+J multi-line input, resize handling, and main-buffer operation.
+- Built-binary PTY/VT acceptance suite covering help, completion, CJK and multi-line input, long streamed replies, resize, cancellation, status cleanup, and Ctrl+T overlay restoration; failure runs retain non-secret ANSI/screen artifacts.
+
+### Changed
+- Normal `llm-session` chat now uses the terminal main buffer; only the transcript overlay enters the alternate screen.
+- Streamed assistant content is written byte-for-byte in arrival order and receives a display-only final newline only when needed.
+
+### Fixed
+- TTY status frames now replace one logical row and synchronously stop before response, error, or cancellation output.
+- Ctrl+C cancels only the active model turn, prints `cancelled`, and returns to the REPL.
+- Long and multi-line assistant replies are no longer clipped by a fixed-height response viewport.
+
 ## [0.4.1] – 2026-06-23
 
 ### Added

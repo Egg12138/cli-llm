@@ -54,8 +54,9 @@ type SessionModel struct {
 	streamCh   chan string
 	streamBuf  strings.Builder
 	cancel     context.CancelFunc
-	statusText string
-	spinnerPos int
+	statusText  string
+	statusLabel string
+	spinnerPos  int
 
 	quitting bool
 }
@@ -70,9 +71,8 @@ func NewSessionModel(cfg SessionConfig) SessionModel {
 		sessionName: cfg.SessionName,
 		width:       defaultWidth,
 		height:      defaultHeight,
-		vpHeight:    defaultHeight - 3,
 	}
-	m.vp.height = m.vpHeight
+	m.recalcLayout()
 	return m
 }
 
@@ -89,11 +89,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.vpHeight = m.height - 3
-		if m.vpHeight < 1 {
-			m.vpHeight = 1
-		}
-		m.vp.height = m.vpHeight
+		m.recalcLayout()
 
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
@@ -106,6 +102,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamFinishedMsg:
 		m.busy = false
 		m.statusText = ""
+		m.statusLabel = ""
 		// Re-render display from state
 		m.refreshViewport()
 		m.streamBuf.Reset()
@@ -118,11 +115,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		if m.busy {
 			m.spinnerPos = (m.spinnerPos + 1) % len(spinnerFrames)
-			label := m.statusText
-			if label == "" {
-				label = "Thinking"
-			}
-			m.statusText = fmt.Sprintf("%s %s", spinnerFrames[m.spinnerPos], label)
+			m.statusText = fmt.Sprintf("%s %s", spinnerFrames[m.spinnerPos], m.statusLabel)
 		}
 		return m, tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
 			return tickMsg(t)
@@ -153,6 +146,10 @@ func (m SessionModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.dispatch(line)
 
+	case tea.KeySpace:
+		m.input.Insert(' ')
+	case tea.KeyCtrlJ:
+		m.input.Insert('\n')
 	case tea.KeyBackspace:
 		m.input.DeleteBeforeCursor()
 	case tea.KeyDelete:
@@ -185,6 +182,7 @@ func (m SessionModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	m.recalcLayout()
 	return m, nil
 }
 
@@ -232,7 +230,8 @@ func (m SessionModel) dispatch(line string) (tea.Model, tea.Cmd) {
 func (m SessionModel) startChat(input string) (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.streamCh = make(chan string, 128)
-	m.statusText = spinnerFrames[0] + " Thinking"
+	m.statusLabel = "Thinking"
+	m.statusText = spinnerFrames[0] + " " + m.statusLabel
 	m.spinnerPos = 0
 	m.vp.AppendLine("> " + input)
 
@@ -366,6 +365,15 @@ func (m SessionModel) renderStatusBar() string {
 }
 
 // ── helper types ───────────────────────────────────────────────
+
+func (m *SessionModel) recalcLayout() {
+	inputLines := m.input.LineCount()
+	m.vpHeight = m.height - 2 - inputLines
+	if m.vpHeight < 1 {
+		m.vpHeight = 1
+	}
+	m.vp.height = m.vpHeight
+}
 
 type chanWriter struct {
 	ch chan<- string
