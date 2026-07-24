@@ -6,6 +6,11 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+## [0.4.3] – 2026-07-24
+
+### Added
+- Root-level alias registry: subcommands gain single-letter shortcuts ("s" → session, "c" → chat, "i" → inspect, "p" → provider, "t" → toolcall). Aliases resolve before dispatch so plugins and builtins require no changes.
+
 ## [0.4.2] – 2026-07-24
 
 ### Added
