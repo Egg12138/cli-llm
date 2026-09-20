@@ -7,6 +7,10 @@ Until then, entries describe internal milestones so the team can track progress.
 ## [Unreleased]
 
 ### Added
+- Active `llm-session` requests can now be cancelled with Esc or Ctrl+C while
+  sending, waiting for the first response, or streaming. The terminal input
+  mode is restored before the next prompt, and status rows advertise the Esc
+  shortcut.
 - `llm-session` TTY prompts now provide INSERT, NORMAL, and VISUAL Vim modes with core motions, `cw`/`ce`, delete/change/yank operators, an unnamed register with `p`/`P`, and undo. Fresh prompts start in INSERT mode for compatibility.
 - Unit and built-binary PTY coverage for modal editing, Unicode/CJK word motion, visual selection, yank/paste, provider input, and JSONL persistence.
 - Isolated target-dispatch coverage for the root multi-runtime installer.

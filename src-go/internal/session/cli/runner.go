@@ -197,15 +197,23 @@ func pickStatusReporter(out io.Writer) sessionruntime.StatusReporter {
 	return &sessionrepl.PlainReporter{Out: out}
 }
 
-func runChatTurnWithInterrupt(parent context.Context, stderr io.Writer, run func(context.Context) error) error {
+func runChatTurnWithInterrupt(parent context.Context, stdin io.Reader, stderr io.Writer, run func(context.Context) error) error {
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
 	defer stop()
-	if err := run(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
+	monitor, err := startTurnKeyMonitor(stdin, stop)
+	if err != nil {
+		return err
+	}
+	runErr := run(ctx)
+	if monitorErr := monitor.stop(); monitorErr != nil {
+		return monitorErr
+	}
+	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) {
 			fmt.Fprintln(stderr, "cancelled")
 			return nil
 		}
-		return err
+		return runErr
 	}
 	return nil
 }
@@ -286,7 +294,7 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 			return err
 		}
 		assistant := presentation.NewAssistantWriter()
-		return runChatTurnWithInterrupt(context.Background(), d.Stderr, func(ctx context.Context) error {
+		return runChatTurnWithInterrupt(context.Background(), d.Stdin, d.Stderr, func(ctx context.Context) error {
 			err := sessionruntime.RunChatTurn(ctx, sessionruntime.ChatTurnRequest{
 				Input:       input,
 				State:       req.State,

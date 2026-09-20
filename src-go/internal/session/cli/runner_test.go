@@ -48,7 +48,7 @@ func TestRunChatTurnWithInterruptReturnsToTheREPLAfterCancellation(t *testing.T)
 	cancel()
 	var stderr bytes.Buffer
 
-	err := runChatTurnWithInterrupt(ctx, &stderr, func(turnCtx context.Context) error {
+	err := runChatTurnWithInterrupt(ctx, nil, &stderr, func(turnCtx context.Context) error {
 		if turnCtx.Err() == nil {
 			t.Fatal("turn context was not cancelled")
 		}

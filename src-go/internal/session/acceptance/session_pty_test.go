@@ -2,6 +2,7 @@ package acceptance
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -103,6 +104,9 @@ func TestSessionPTY(t *testing.T) {
 	if firstContent < 0 {
 		t.Fatal("long response first marker missing from raw ANSI")
 	}
+	if !strings.Contains(responseRaw, "LONG-LINE-00 unique response marker\r\nLONG-LINE-01") {
+		t.Fatalf("active-turn input mode broke terminal newline processing: %q", responseRaw[firstContent:])
+	}
 	if !strings.Contains(responseRaw[:firstContent], "\r\x1b[2K") {
 		t.Fatalf("spinner did not use CR + erase before response: %q", responseRaw[:firstContent])
 	}
@@ -122,12 +126,29 @@ func TestSessionPTY(t *testing.T) {
 	h.waitUntil(func() bool {
 		return containsBrailleSpinner(h.Raw()[cancelStart:])
 	}, "visible cancellation spinner")
-	h.Send("cancel-sigint", []byte{0x03})
+	if segment := h.Raw()[cancelStart:]; !strings.Contains(segment, "Esc cancel") {
+		t.Fatalf("active-turn status did not advertise Esc cancellation: %q", segment)
+	}
+	h.Send("cancel-escape", []byte{0x1b})
 	h.WaitRawSequenceAfter(cancelStart, "cancelled", "Enter send")
 	cancelSegment := h.Raw()[cancelStart:]
 	if strings.Count(cancelSegment, "cancelled") != 1 {
 		t.Fatalf("cancellation message count = %d, want 1: %q", strings.Count(cancelSegment, "cancelled"), cancelSegment)
 	}
+
+	ctrlCStart := len(h.Raw())
+	h.Send("ctrl-c-cancel-turn", []byte("cancel me\r"))
+	h.waitUntil(func() bool {
+		return containsBrailleSpinner(h.Raw()[ctrlCStart:])
+	}, "visible Ctrl+C cancellation spinner")
+	h.Send("cancel-sigint", []byte{0x03})
+	h.WaitRawSequenceAfter(ctrlCStart, "cancelled", "Enter send")
+
+	streamCancelStart := len(h.Raw())
+	h.Send("stream-cancel-turn", []byte("cancel while streaming\r"))
+	h.WaitRawSequenceAfter(streamCancelStart, "Assistant ›", "PARTIAL_RESPONSE")
+	h.Send("stream-cancel-escape", []byte{0x1b})
+	h.WaitRawSequenceAfter(streamCancelStart, "PARTIAL_RESPONSE", "cancelled", "Enter send")
 
 	h.Send("open-transcript", []byte{0x14})
 	h.WaitAltScreen(true)
@@ -160,7 +181,8 @@ func TestSessionPTY(t *testing.T) {
 	}, "Vim-edited provider input")
 
 	h.Exit()
-	assertPersistedInputs(t, h.home, []string{"你好 世界", "第一行\nsecond line", "resize 保留", "cancel me", "alpha gammaalpha"})
+	assertPersistedInputs(t, h.home, []string{"你好 世界", "第一行\nsecond line", "resize 保留", "cancel me", "cancel while streaming", "alpha gammaalpha"})
+	assertSessionFileOmits(t, h.home, "PARTIAL_RESPONSE")
 }
 
 func containsBrailleSpinner(value string) bool {
@@ -211,6 +233,21 @@ func assertPersistedInputs(t *testing.T, home string, expected []string) {
 		if !found {
 			t.Fatalf("persisted users %#v missing %q", users, want)
 		}
+	}
+}
+
+func assertSessionFileOmits(t *testing.T, home, forbidden string) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(home, ".cli-llm", "sessions", "*.jsonl"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("session files = %#v, err = %v", paths, err)
+	}
+	content, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatalf("read session JSONL: %v", err)
+	}
+	if bytes.Contains(content, []byte(forbidden)) {
+		t.Fatalf("cancelled assistant content %q was persisted", forbidden)
 	}
 }
 

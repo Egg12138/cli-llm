@@ -178,6 +178,8 @@ and green `Assistant ›` role labels with a blank line between message blocks;
 slash-command results are dimmed so they remain visually separate from chat.
 Pressing Enter on an incomplete slash command executes the selected completion,
 which defaults to the first candidate (for example, `/ex` executes `/exit`).
+While a request is being sent, waiting for its first response, or streaming an
+answer, press Esc or Ctrl+C to cancel that turn and return to the next prompt.
 Set any non-empty `NO_COLOR` value to disable these styles while preserving the
 labels and spacing.
 

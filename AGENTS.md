@@ -210,6 +210,11 @@ wrapping, Vim INSERT/NORMAL/VISUAL modes, and Ctrl+J for a newline. Enter submit
 the complete buffer. Do not document Shift+Enter unless it is actually added and
 covered by PTY tests.
 
+During an active request, Esc and Ctrl+C cancel the current turn while sending,
+waiting for the first response, or streaming. Cancellation restores the terminal
+input mode before returning to the prompt; at an idle prompt, Esc retains its Vim
+mode-switching behavior.
+
 Only the Ctrl+T transcript overlay enters the alternate screen. It renders the
 current branch's reachable history, offers a branch preview panel, and copies
 the selected dialog with OSC 52. The production runner uses

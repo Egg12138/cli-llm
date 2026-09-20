@@ -80,7 +80,7 @@ func (r *TTYReporter) run() {
 			default:
 			}
 			r.mu.Lock()
-			label := statusLabel(r.status)
+			label := statusLabel(r.status) + " · Esc cancel"
 			r.mu.Unlock()
 			frame := frames[i%len(frames)]
 			i++

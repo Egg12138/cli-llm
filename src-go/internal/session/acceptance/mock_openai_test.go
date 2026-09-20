@@ -89,27 +89,36 @@ func (m *mockOpenAI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		return
 	}
+	if user == "cancel while streaming" {
+		writeStreamChunk(w, "PARTIAL_RESPONSE")
+		<-r.Context().Done()
+		return
+	}
 
 	time.Sleep(180 * time.Millisecond)
 	for _, chunk := range responseChunks(user) {
-		payload, _ := json.Marshal(map[string]any{
-			"id":      "chunk",
-			"object":  "chat.completion.chunk",
-			"created": 1,
-			"model":   "mock-model",
-			"choices": []map[string]any{{
-				"index":         0,
-				"delta":         map[string]string{"content": chunk},
-				"finish_reason": nil,
-			}},
-		})
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
+		writeStreamChunk(w, chunk)
 		time.Sleep(5 * time.Millisecond)
 	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func writeStreamChunk(w http.ResponseWriter, content string) {
+	payload, _ := json.Marshal(map[string]any{
+		"id":      "chunk",
+		"object":  "chat.completion.chunk",
+		"created": 1,
+		"model":   "mock-model",
+		"choices": []map[string]any{{
+			"index":         0,
+			"delta":         map[string]string{"content": content},
+			"finish_reason": nil,
+		}},
+	})
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}

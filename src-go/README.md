@@ -91,3 +91,5 @@ non-empty `NO_COLOR` value removes color and dim styling without removing the
 labels or spacing.
 Enter executes the selected completion for an incomplete slash command, using
 the first candidate by default; Tab still expands the candidate for editing.
+During an active request, Esc or Ctrl+C cancels the current turn and restores
+the prompt, including while waiting for the first chunk or streaming a reply.
