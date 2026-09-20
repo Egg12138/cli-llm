@@ -12,6 +12,10 @@ Until then, entries describe internal milestones so the team can track progress.
 - Isolated target-dispatch coverage for the root multi-runtime installer.
 
 ### Changed
+- `llm-session` normal-buffer chat now separates turns with bold blue `You ›`
+  and bold green `Assistant ›` labels plus stable blank-line spacing. Slash
+  command results and completion lists use dim styling, while command errors
+  remain prominent; `NO_COLOR` and non-TTY output retain the plain-text layout.
 - The root installer now treats `CLI_LLM_GO`, `CLI_LLM_PY`, and `CLI_LLM_RUST` as mutually exclusive target selectors. It builds only the selected runtime and reports that target's tool version, toolchain, and numbered build steps.
 - After target selection, the root installer now completes a target-specific prerequisite check before creating the install directory or starting a build. It validates source manifests, required local tools, and declared minimum toolchain versions without pre-downloading package dependencies.
 

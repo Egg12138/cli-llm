@@ -188,7 +188,7 @@ func (m EditorModel) View() string {
 	if m.done {
 		return ""
 	}
-	parts := []string{m.editor.View(m.prompt, m.width, maxEditorHeight)}
+	parts := []string{m.prompt, m.editor.View("", m.width, maxEditorHeight)}
 	if completions := renderCompletions(m.matches, m.selected, m.width); completions != "" {
 		parts = append(parts, completions)
 	}

@@ -280,13 +280,18 @@ func runREPLSession(req StartREPLRequest, d RunnerDeps) error {
 
 func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.InputReader) error {
 	sessionName := req.Name
+	presentation := sessiontui.NewPresentation(d.Stdout, colorsEnabled(d.Stdout))
 	runner := sessionrepl.ChatRunner(chatRunnerFunc(func(input string) error {
+		if err := presentation.WriteUser(input); err != nil {
+			return err
+		}
+		assistant := presentation.NewAssistantWriter()
 		return runChatTurnWithInterrupt(context.Background(), d.Stderr, func(ctx context.Context) error {
-			return sessionruntime.RunChatTurn(ctx, sessionruntime.ChatTurnRequest{
+			err := sessionruntime.RunChatTurn(ctx, sessionruntime.ChatTurnRequest{
 				Input:       input,
 				State:       req.State,
 				Store:       req.Store,
-				Writer:      d.Stdout,
+				Writer:      assistant,
 				Model:       req.Model,
 				TitleModel:  req.Model,
 				SessionName: sessionName,
@@ -306,19 +311,29 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 					return nil
 				},
 			})
+			if finishErr := assistant.Finish(); err == nil {
+				err = finishErr
+			}
+			return err
 		})
 	}))
 	code := sessionrepl.Loop(sessionrepl.LoopOptions{
-		Reader:  reader,
-		Chat:    runner,
-		State:   req.State,
-		Stdout:  d.Stdout,
-		Stderr:  d.Stderr,
-		Store:   req.Store,
-		Overlay: sessiontui.NewOverlay(),
+		Reader:        reader,
+		Chat:          runner,
+		State:         req.State,
+		Prompt:        presentation.UserLabel(),
+		Stdout:        d.Stdout,
+		CommandOutput: presentation.CommandWriter(),
+		Stderr:        d.Stderr,
+		Store:         req.Store,
+		Overlay:       sessiontui.NewOverlay(),
 	})
 	if code != 0 {
 		return fmt.Errorf("repl exited with code %d", code)
 	}
 	return nil
+}
+
+func colorsEnabled(out io.Writer) bool {
+	return os.Getenv("NO_COLOR") == "" && isTerminalWriter(out)
 }

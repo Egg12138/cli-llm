@@ -85,3 +85,7 @@ Press Esc for NORMAL mode and `v` for VISUAL mode. The core map includes
 `h/j/k/l`, arrows, `w/b/e`, `0/^/$`, `gg/G`, `i/I/a/A/o/O`, `x`, `r`,
 `d/c/y` with motions, `dd/cc/yy`, `cw`/`ce`, `p/P`, and `u`. Enter submits in
 every mode; Ctrl+J inserts a newline and Ctrl+T opens the transcript overlay.
+Normal chat uses blue `You ›` and green `Assistant ›` labels with a blank
+line between message blocks. Slash-command output is dimmed; setting any
+non-empty `NO_COLOR` value removes color and dim styling without removing the
+labels or spacing.

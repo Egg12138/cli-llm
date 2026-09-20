@@ -36,11 +36,17 @@ func renderCompletions(matches []repl.Completion, selected, width int) string {
 			line += strings.Repeat(" ", usageWidth-ansi.StringWidth(match.Spec.Usage)+2)
 			line += match.Spec.Description
 		}
-		lines = append(lines, ansi.Truncate(line, width, "…"))
+		line = ansi.Truncate(line, width, "…")
+		if i == selected {
+			line = selectedStyle.Render(line)
+		} else {
+			line = footerStyle.Render(line)
+		}
+		lines = append(lines, line)
 	}
 	if width < 60 {
 		description := "  " + matches[selected].Spec.Description
-		lines = append(lines, ansi.Truncate(description, width, "…"))
+		lines = append(lines, footerStyle.Render(ansi.Truncate(description, width, "…")))
 	}
 	return strings.Join(lines, "\n")
 }

@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	sessionrepl "github.com/Egg12138/cli-llm/src-go/internal/session/repl"
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,21 +37,7 @@ func (r *EditorReader) ReadEvent(prompt string) sessionrepl.InputEvent {
 		return sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Err: fmt.Errorf("unexpected editor model %T", result)}
 	}
 	event := editor.Event()
-	if event.Err == nil && event.Kind == sessionrepl.EventLine && sessionrepl.ParseLine(event.Line).Kind == sessionrepl.CommandChat {
-		if err := writeSubmittedInput(r.out, prompt, event.Line); err != nil {
-			event.Err = err
-		}
-	}
 	return event
-}
-
-func writeSubmittedInput(out io.Writer, prompt, input string) error {
-	for _, line := range strings.Split(input, "\n") {
-		if _, err := fmt.Fprintf(out, "%s%s\n", prompt, line); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 var _ sessionrepl.InputEventReader = (*EditorReader)(nil)

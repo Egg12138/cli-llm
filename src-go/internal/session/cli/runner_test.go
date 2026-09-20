@@ -14,6 +14,7 @@ import (
 	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/creack/pty"
 )
 
 func TestRunInteractiveSessionUsesMainBuffer(t *testing.T) {
@@ -153,6 +154,31 @@ func TestRunnerFreshRenamesSessionFromGeneratedTitle(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "session name:") {
 		t.Fatalf("fresh session prompted for a name: %q", out.String())
+	}
+	const want = "You ›\nhello world\n\nAssistant ›\nanswer\n\n"
+	if got := out.String(); got != want {
+		t.Fatalf("session output = %q, want %q", got, want)
+	}
+}
+
+func TestColorsEnabledDefaultsOnForTTYAndHonorsNoColor(t *testing.T) {
+	terminal, peer, err := pty.Open()
+	if err != nil {
+		t.Fatalf("open PTY: %v", err)
+	}
+	defer terminal.Close()
+	defer peer.Close()
+
+	t.Setenv("NO_COLOR", "")
+	if !colorsEnabled(peer) {
+		t.Fatal("TTY colors should be enabled when NO_COLOR is empty")
+	}
+	t.Setenv("NO_COLOR", "no")
+	if colorsEnabled(peer) {
+		t.Fatal("any non-empty NO_COLOR value should disable colors")
+	}
+	if colorsEnabled(&bytes.Buffer{}) {
+		t.Fatal("non-TTY output should not emit colors")
 	}
 }
 

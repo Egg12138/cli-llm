@@ -173,7 +173,11 @@ Ctrl+T control character when it is delivered by the terminal input path.
 TTY prompts start in Vim INSERT mode for backward-compatible direct typing.
 Esc switches to NORMAL and `v` enters VISUAL; core motions, `cw`/`ce`,
 delete/change/yank operators, `yy`, `p/P`, and undo are available. The active
-mode is always shown in the prompt footer.
+mode is always shown in the prompt footer. Normal chat displays blue `You ›`
+and green `Assistant ›` role labels with a blank line between message blocks;
+slash-command results are dimmed so they remain visually separate from chat.
+Set any non-empty `NO_COLOR` value to disable these styles while preserving the
+labels and spacing.
 
 ### Using plugins
 

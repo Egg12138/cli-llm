@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,6 +101,33 @@ func TestREPLRunsChatLinesAndSlashCommands(t *testing.T) {
 	}
 	if !bytes.Contains(out.Bytes(), []byte("main")) {
 		t.Fatalf("expected branches output in stdout, got %q", out.String())
+	}
+}
+
+func TestREPLRoutesCommandOutputSeparatelyButKeepsUnknownCommandsVisible(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	var commands bytes.Buffer
+	code := Loop(LoopOptions{
+		Reader:        &fakeReader{lines: []string{"/help", "/unknown", "/exit"}},
+		Chat:          &fakeChatRunner{},
+		State:         graph.NewState(nil),
+		Stdout:        &out,
+		CommandOutput: &commands,
+	})
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(commands.String(), "Available commands:") {
+		t.Fatalf("command output missing help: %q", commands.String())
+	}
+	if strings.Contains(commands.String(), "unknown command") {
+		t.Fatalf("unknown command was routed through styled command output: %q", commands.String())
+	}
+	if !strings.Contains(out.String(), "unknown command: /unknown") {
+		t.Fatalf("stdout missing unknown command error: %q", out.String())
 	}
 }
 

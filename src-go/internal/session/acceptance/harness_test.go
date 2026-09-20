@@ -60,7 +60,7 @@ func newPTYHarness(t *testing.T, width, height int) *ptyHarness {
 		"OPENAI_BASE_URL": mock.URL(),
 		"OPENAI_MODEL":    "mock-model",
 		"TERM":            "xterm-256color",
-		"NO_COLOR":        "1",
+		"NO_COLOR":        "",
 	})
 	terminal, err := pty.StartWithSize(command, &pty.Winsize{Cols: uint16(width), Rows: uint16(height)})
 	if err != nil {

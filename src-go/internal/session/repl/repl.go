@@ -52,13 +52,15 @@ type CommandStore interface {
 }
 
 type LoopOptions struct {
-	Reader  InputReader
-	Chat    ChatRunner
-	State   *graph.State
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Overlay TranscriptOverlay
-	Store   CommandStore
+	Reader        InputReader
+	Chat          ChatRunner
+	State         *graph.State
+	Prompt        string
+	Stdout        io.Writer
+	CommandOutput io.Writer
+	Stderr        io.Writer
+	Overlay       TranscriptOverlay
+	Store         CommandStore
 }
 
 func Loop(opts LoopOptions) int {
@@ -66,8 +68,16 @@ func Loop(opts LoopOptions) int {
 	if out == nil {
 		out = io.Discard
 	}
+	commandOut := opts.CommandOutput
+	if commandOut == nil {
+		commandOut = out
+	}
+	prompt := opts.Prompt
+	if prompt == "" {
+		prompt = "> "
+	}
 	for {
-		event := readInputEvent(opts.Reader, "> ")
+		event := readInputEvent(opts.Reader, prompt)
 		if event.Kind == EventTranscript {
 			if opts.Overlay != nil {
 				if err := opts.Overlay.Open(opts.State, out); err != nil {
@@ -89,7 +99,11 @@ func Loop(opts LoopOptions) int {
 			return 1
 		}
 		command := ParseLine(line)
-		action, err := ExecuteCommandWithStore(opts.State, command, out, opts.Store)
+		output := commandOut
+		if command.Kind == CommandUnknown {
+			output = out
+		}
+		action, err := ExecuteCommandWithStore(opts.State, command, output, opts.Store)
 		if err != nil {
 			fmt.Fprintln(out, err)
 			continue

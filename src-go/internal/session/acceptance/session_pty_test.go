@@ -15,9 +15,17 @@ import (
 func TestSessionPTY(t *testing.T) {
 	h := newPTYHarness(t, 80, 24)
 	h.WaitRawContains("Enter send")
+	h.WaitRawContains("You ›")
+	if raw := h.Raw(); !strings.Contains(raw, "mYou ›\x1b[0m") {
+		t.Fatalf("default TTY user label was not colored: %q", raw)
+	}
 
+	helpStart := len(h.Raw())
 	h.Send("help", []byte("/help\r"))
 	h.WaitRawContains("Available commands:")
+	if segment := h.Raw()[helpStart:]; !strings.Contains(segment, "\x1b[2mAvailable commands:") {
+		t.Fatalf("help output was not dimmed: %q", segment)
+	}
 	for _, command := range []string{"/help", "/exit", "/transcript", "/branches", "/switch <target>", "/checkpoint <name>", "/t"} {
 		if !strings.Contains(h.Raw(), command) {
 			t.Fatalf("help output missing %q", command)
@@ -27,10 +35,17 @@ func TestSessionPTY(t *testing.T) {
 		t.Fatalf("help contacted provider: %#v", requests)
 	}
 
+	listStart := len(h.Raw())
+	h.Send("completion-list", []byte("/"))
+	h.WaitRawSequenceAfter(listStart, "/checkpoint <name>")
+	if segment := h.Raw()[listStart:]; !strings.Contains(segment, "\x1b[2m  /exit") {
+		t.Fatalf("unselected completion was not dimmed: %q", segment)
+	}
+	h.Send("completion-list-clear", []byte{0x7f})
+
 	h.Send("completion-prefix", []byte("/he"))
 	h.WaitScreenContains("/help")
 	h.Send("completion-tab", []byte{'\t'})
-	h.WaitScreenContains("> /help")
 	h.Send("completion-submit", []byte{'\r'})
 	h.waitUntil(func() bool { return strings.Count(h.Raw(), "Available commands:") >= 2 }, "completed /help execution")
 
@@ -51,7 +66,10 @@ func TestSessionPTY(t *testing.T) {
 	if terminalHistory := scrollback + "\n" + screen; !strings.Contains(terminalHistory, "你好 世界") {
 		t.Fatalf("submitted input disappeared while waiting for response\nscreen:\n%s\nscrollback:\n%s", screen, scrollback)
 	}
-	h.WaitRawSequenceAfter(cjkStart, "CJK_ACK", "Enter send")
+	h.WaitRawSequenceAfter(cjkStart, "You ›", "你好 世界", "Assistant ›", "CJK_ACK", "Enter send")
+	if segment := h.Raw()[cjkStart:]; !strings.Contains(segment, "mAssistant ›\x1b[0m") {
+		t.Fatalf("default TTY assistant label was not colored: %q", segment)
+	}
 	h.WaitRequestCount(2)
 	if users := h.mock.StreamingUsers(); len(users) != 1 || users[0] != "你好 世界" {
 		t.Fatalf("streaming users after CJK turn = %#v", users)

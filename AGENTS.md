@@ -199,6 +199,10 @@ Enabled slash commands come from one registry shared by help and completion:
 | `/checkpoint <name>` | Persist a named pointer at the current position. |
 
 Normal chat stays in the terminal main buffer to preserve native scrollback.
+It renders bold blue `You ›` and bold green `Assistant ›` labels with a
+blank line between message blocks. Slash-command results and completion lists
+are dimmed; errors remain prominent. Any non-empty `NO_COLOR` value disables
+color and dim styling without removing the labels or spacing.
 The per-prompt Bubble Tea editor supports spaces, arbitrary UTF-8/CJK, visual
 wrapping, Vim INSERT/NORMAL/VISUAL modes, and Ctrl+J for a newline. Enter submits
 the complete buffer. Do not document Shift+Enter unless it is actually added and
