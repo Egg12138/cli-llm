@@ -119,7 +119,7 @@ assert_before() {
 
 GO_OUTPUT="$TMP_ROOT/go.out"
 run_installer "$GO_OUTPUT" env CLI_LLM_GO=1
-assert_contains "$GO_OUTPUT" "cli-llm 0.4.3"
+assert_contains "$GO_OUTPUT" "cli-llm 0.4.4"
 assert_contains "$GO_OUTPUT" "Target: Go (Eino)"
 assert_contains "$GO_OUTPUT" "Toolchain: go version go1.25.1 linux/amd64"
 assert_contains "$GO_OUTPUT" "$FAKE_BIN/go"

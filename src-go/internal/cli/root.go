@@ -21,8 +21,9 @@ type ExecutionPlan struct {
 	PluginPath string
 }
 
-// Version is the current cli-llm release, kept in sync with pyproject.toml.
-const Version = "0.4.3"
+// Version is the current Go cli-llm release. Keep it aligned with the bundled
+// session plugin when they ship together.
+const Version = "0.4.4"
 
 var (
 	builtinSubcommands = []string{"chat", "inspect", "provider", "toolcall"}

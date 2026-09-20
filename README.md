@@ -5,7 +5,7 @@ The project currently targets team workflows only; no public release is schedule
 
 ## Status
 - **Current train**: `0.4.x – Advanced Provider & Release Prep`
-- **Latest milestone**: `0.4.0` (Go-only `llm-session` plugin, plugin dispatch wiring, install/docs sync, env-aware session runtime)
+- **Latest milestone**: `0.4.4` (Go session terminal UX, cancellation, command completion, and installer hardening)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot

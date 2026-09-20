@@ -6,6 +6,8 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+## [0.4.4] – 2026-09-20
+
 ### Added
 - Active `llm-session` requests can now be cancelled with Esc or Ctrl+C while
   sending, waiting for the first response, or streaming. The terminal input

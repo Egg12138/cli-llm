@@ -18,8 +18,8 @@ maturity and version numbers:
 | Runtime | Version source | Status |
 |---|---|---|
 | Python | `pyproject.toml` (`0.3.0`) | Primary packaged/supported runtime for the shared CLI surface. |
-| Go/Eino | `src-go/internal/cli/root.go` (`0.4.3`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
-| Go session plugin | `src-go/internal/session/cli/version.go` (`0.4.3`) | Bundled Go-only plugin installed as `llm-session`. |
+| Go/Eino | `src-go/internal/cli/root.go` (`0.4.4`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
+| Go session plugin | `src-go/internal/session/cli/version.go` (`0.4.4`) | Bundled Go-only plugin installed as `llm-session`. |
 | Rust | `src-rs/Cargo.toml` (`0.1.0`) | Dormant prototype; buildable, but not on an active parity track. |
 
 Do not assume a single repository-wide version. Update the source of truth for
