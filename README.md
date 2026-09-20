@@ -74,6 +74,24 @@ If `~/.local/bin` is not on your `PATH`, add this to your shell profile:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+For repository builds that select a runtime implementation, use the root
+installer. It builds exactly one target; Go is the default when no selector is
+provided:
+
+```bash
+./install.sh
+CLI_LLM_GO=1 ./install.sh
+CLI_LLM_PY=1 ./install.sh
+CLI_LLM_RUST=1 ./install.sh
+```
+
+`CLI_LLM_GO`, `CLI_LLM_PY`, and `CLI_LLM_RUST` are mutually exclusive. The
+installer reports the selected target's tool version, detected toolchain, and
+numbered build/install steps. Before creating the install directory or building,
+it validates the selected target's source manifests and required local tools,
+including minimum toolchain versions where declared. Package downloads remain
+the responsibility of the selected build tool and the user's environment.
+
 ## Development Guide
 1. **Environment**
    - Create a virtual environment (`uv venv` / `python -m venv .venv`) and activate it.

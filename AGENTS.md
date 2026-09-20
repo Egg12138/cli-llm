@@ -68,7 +68,7 @@ Comment style: less comment. remains comment only for some public function doc s
     - `stdin`: multi-line until EOF (Ctrl+D)
 
 11. **One-Click Installer** (0.2.4)  
-    `install.sh` — standalone script that installs Python package (editable), creates `~/.local/bin/llm` entry point, sets up `~/.config/cli-llm/config.toml`, optionally builds Rust binary.
+    `install.sh` — standalone multi-runtime installer with mutually exclusive `CLI_LLM_GO`, `CLI_LLM_PY`, and `CLI_LLM_RUST` target selection plus target-specific prerequisite checks. Builds Go by default, creates `~/.local/bin/llm`, and sets up `~/.config/cli-llm/config.toml`.
 
 12. **Agents Context Toggle** (0.3.0)  
     `--agents-context` / `-A` flag reads `./AGENTS.md` from cwd and appends it to the system prompt. Size guard (16 KB truncation), sanitization, graceful missing-file handling.

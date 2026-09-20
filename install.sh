@@ -1,345 +1,385 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─────────────────────────────────────────────────────────────
-#  cli-llm — install.sh
-#  Single‑script installer for the cli-llm project.
-#  Supports Python (primary), Go, and Rust (opt‑in) builds.
-#
-#  After installation the `llm` command is placed in
-#  ~/.local/bin  so it is available on most Unix PATHs.
-# ─────────────────────────────────────────────────────────────
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
-
 LOG_PREFIX="[install]"
-
-# ── helpers ──────────────────────────────────────────────────
+CHECK_PREFIX="[check]"
 
 info() { printf "  %s %s\n" "$LOG_PREFIX" "$*"; }
-ok() { printf "  %s \e[32m✓\e[0m %s\n" "$LOG_PREFIX" "$*"; }
-warn() { printf "  %s \e[33m!\e[0m %s\n" "$LOG_PREFIX" "$*" >&2; }
+ok() { printf "  %s \033[32m✓\033[0m %s\n" "$LOG_PREFIX" "$*"; }
+warn() { printf "  %s \033[33m!\033[0m %s\n" "$LOG_PREFIX" "$*" >&2; }
+check_info() { printf "  %s %s\n" "$CHECK_PREFIX" "$*"; }
+check_ok() { printf "  %s \033[32m✓\033[0m %s\n" "$CHECK_PREFIX" "$*"; }
 fail() {
-	printf "  %s \e[31m✗\e[0m %s\n" "$LOG_PREFIX" "$*" >&2
+	printf "  %s \033[31m✗\033[0m %s\n" "$LOG_PREFIX" "$*" >&2
 	exit 1
 }
 
 command_exists() { command -v "$1" &>/dev/null; }
 
-# ── help ──────────────────────────────────────────────────────
-
 show_help() {
 	cat <<'EOF'
 Usage: ./install.sh [OPTIONS]
 
-Single‑script installer for the cli-llm project.
-Supports Python (primary), Go, and Rust (opt‑in) builds.
-
-After installation the `llm` command is placed in
-~/.local/bin so it is available on most Unix PATHs.
+Build and install one cli-llm runtime target. With no target variable set,
+the Go target is selected.
 
 Options:
   -h, --help    Show this help message and exit
 
-Environment variables:
-  CLI_LLM_GO=n    Skip the Go (EINO) binary build (Go is built by default)
-  CLI_LLM_RUST=y  Build the Rust binary instead of using Python
+Target selection (choose at most one):
+  CLI_LLM_GO=y    Build the Go/Eino target
+  CLI_LLM_PY=y    Install the Python target
+  CLI_LLM_RUST=y  Build the Rust target
+
+Accepted true values: y, yes, 1, true, on (case-insensitive).
+For backward compatibility, CLI_LLM_GO=n selects Python when no other target
+is enabled.
 
 Examples:
   ./install.sh
-  CLI_LLM_GO=n ./install.sh
-  CLI_LLM_RUST=y ./install.sh
+  CLI_LLM_GO=1 ./install.sh
+  CLI_LLM_PY=y ./install.sh
+  CLI_LLM_RUST=yes ./install.sh
 EOF
 	exit 0
 }
 
-# Parse --help / -h before anything else
 for arg in "$@"; do
 	case "$arg" in
 	-h | --help) show_help ;;
+	*) fail "Unknown option: $arg" ;;
 	esac
 done
 
-# ── header ───────────────────────────────────────────────────
+normalize_toggle() {
+	local name="$1"
+	local value="$2"
+	case "${value,,}" in
+		y | yes | 1 | true | on) printf '1' ;;
+		n | no | 0 | false | off | '') printf '0' ;;
+		*) fail "$name must be one of: y, yes, 1, true, on, n, no, 0, false, off" ;;
+	esac
+}
 
-VERSION="$(grep -m1 '^version =' "$PROJECT_ROOT/pyproject.toml" | cut -d'"' -f2)"
-echo ""
-printf "  ╭──────────────────────────────────────╮\n"
-printf "  │  \e[1mcli-llm\e[0m — installer                   │\n"
-printf "  │  %-36s │\n" "$VERSION"
-printf "  ╰──────────────────────────────────────╯\n"
-echo ""
+GO_SET=0
+PY_SET=0
+RUST_SET=0
+[ "${CLI_LLM_GO+x}" = x ] && GO_SET=1
+[ "${CLI_LLM_PY+x}" = x ] && PY_SET=1
+[ "${CLI_LLM_RUST+x}" = x ] && RUST_SET=1
 
-# ── prerequisites ────────────────────────────────────────────
+GO_ENABLED="$(normalize_toggle CLI_LLM_GO "${CLI_LLM_GO:-}")"
+PY_ENABLED="$(normalize_toggle CLI_LLM_PY "${CLI_LLM_PY:-}")"
+RUST_ENABLED="$(normalize_toggle CLI_LLM_RUST "${CLI_LLM_RUST:-}")"
+ENABLED_COUNT=$((GO_ENABLED + PY_ENABLED + RUST_ENABLED))
 
-PYTHON=""
-for candidate in python3 python; do
-	if command_exists "$candidate"; then
-		ver=$("$candidate" --version 2>&1 | grep -oP '\d+\.\d+')
-		major="${ver%%.*}"
-		if [ "$major" -ge 3 ]; then
-			PYTHON="$candidate"
-			break
-		fi
+if [ "$ENABLED_COUNT" -gt 1 ]; then
+	fail "Choose exactly one build target; CLI_LLM_GO, CLI_LLM_PY, and CLI_LLM_RUST are mutually exclusive."
+fi
+
+if [ "$ENABLED_COUNT" -eq 0 ]; then
+	if [ "$GO_SET" -eq 0 ] && [ "$PY_SET" -eq 0 ] && [ "$RUST_SET" -eq 0 ]; then
+		GO_ENABLED=1
+	elif [ "$GO_SET" -eq 1 ] && [ "$PY_SET" -eq 0 ] && [ "$RUST_SET" -eq 0 ]; then
+		PY_ENABLED=1
+	else
+		fail "No build target is enabled. Set one of CLI_LLM_GO, CLI_LLM_PY, or CLI_LLM_RUST to y."
 	fi
-done
-
-if [ -z "$PYTHON" ]; then
-	fail "Python 3 (>=3.9) is required but not found. Install Python first."
 fi
 
-info "Using Python: $($PYTHON --version)"
+read_python_version() {
+	sed -n 's/^version = "\([^"]*\)"/\1/p' "$PROJECT_ROOT/pyproject.toml" | head -n 1
+}
 
-if command_exists uv; then
-	INSTALLER="uv"
-	INSTALL_CMD="uv pip install"
-	info "Using uv for package management (faster)."
-elif command_exists pip3; then
-	INSTALLER="pip3"
-	INSTALL_CMD="pip3 install"
-	info "Using pip3 for package management."
-elif command_exists pip; then
-	INSTALLER="pip"
-	INSTALL_CMD="pip install"
-	info "Using pip for package management."
+read_go_version() {
+	sed -n 's/^const Version = "\([^"]*\)"/\1/p' "$PROJECT_ROOT/src-go/internal/cli/root.go" | head -n 1
+}
+
+read_rust_version() {
+	sed -n 's/^version = "\([^"]*\)"/\1/p' "$PROJECT_ROOT/src-rs/Cargo.toml" | head -n 1
+}
+
+if [ "$GO_ENABLED" -eq 1 ]; then
+	TARGET="go"
+	TARGET_LABEL="Go (Eino)"
+	VERSION="$(read_go_version)"
+elif [ "$PY_ENABLED" -eq 1 ]; then
+	TARGET="python"
+	TARGET_LABEL="Python"
+	VERSION="$(read_python_version)"
 else
-	fail "Neither uv nor pip found. Install pip (or uv) first."
+	TARGET="rust"
+	TARGET_LABEL="Rust"
+	VERSION="$(read_rust_version)"
 fi
 
-# ── phase 1: Python package ──────────────────────────────────
+[ -n "$VERSION" ] || fail "Could not determine the $TARGET_LABEL tool version."
 
-info "Installing cli-llm Python package (editable mode) …"
-if [ "$INSTALLER" = "uv" ]; then
-	uv pip install --editable "$PROJECT_ROOT" 2>&1 | sed "s/^/  $LOG_PREFIX /"
-else
-	$INSTALL_CMD --editable "$PROJECT_ROOT" 2>&1 | sed "s/^/  $LOG_PREFIX /"
-fi
-ok "Python package installed."
-
-# ── phase 2: (optional) dev extras ───────────────────────────
-
-info "Installing dev extras …"
-if [ "$INSTALLER" = "uv" ]; then
-	uv pip install --editable "$PROJECT_ROOT[dev]" 2>&1 | sed "s/^/  $LOG_PREFIX /" || true
-else
-	$INSTALL_CMD --editable "$PROJECT_ROOT[dev]" 2>&1 | sed "s/^/  $LOG_PREFIX /" || true
-fi
-ok "Dev extras installed (if available)."
-
-# ── phase 3: create ~/.local/bin/llm entry point ──────────────
+printf '\n'
+printf '  ╭──────────────────────────────────────╮\n'
+printf '  │  \033[1m%-36s\033[0m │\n' "cli-llm $VERSION"
+printf '  │  Target: %-28s │\n' "$TARGET_LABEL"
+printf '  ╰──────────────────────────────────────╯\n'
+printf '\n'
 
 LOCAL_BIN="${HOME}/.local/bin"
-mkdir -p "$LOCAL_BIN"
+PYTHON_BIN=""
+PACKAGE_MANAGER=""
 
-# Find the entry-point script that pip/uv created.
-# pip-installed scripts live under sys.prefix/bin; uv may use a
-# different scheme, so we fall back to a thin wrapper.
-ENTRY_POINT="$($PYTHON -c "
-import sys, os
-p = os.path.join(sys.prefix, 'bin', 'llm')
-print(p) if os.path.exists(p) else print('')
-" 2>/dev/null || true)"
-
-if [ -n "$ENTRY_POINT" ] && [ -x "$ENTRY_POINT" ]; then
-	# Symlink the installed entry point into ~/.local/bin
-	ln -sf "$ENTRY_POINT" "$LOCAL_BIN/llm"
-	ok "Symlinked llm → $ENTRY_POINT"
-else
-	# Fallback: thin wrapper that invokes python -m cli_llm
-	cat >"$LOCAL_BIN/llm" <<'WRAPPER'
-#!/usr/bin/env bash
-# cli-llm wrapper — delegates to the installed Python module.
-# Created by install.sh; safe to delete / regenerate.
-PYTHON="${CLI_LLM_PYTHON:-python3}"
-exec "$PYTHON" -m cli_llm "$@"
-WRAPPER
-	chmod +x "$LOCAL_BIN/llm"
-	ok "Created wrapper → $LOCAL_BIN/llm"
-fi
-
-# Ensure ~/.local/bin appears in the user's PATH hint
-if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
-	warn "$LOCAL_BIN is not on your PATH."
-	info "Add this to your shell rc file:"
-	info "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-fi
-
-# ── phase 4: (optional) Go binary ────────────────────────────
-
-if command_exists go && [ -f "$PROJECT_ROOT/src-go/go.mod" ]; then
-	echo ""
-	echo "  ┌─ Go binary ───────────────────────────────┐"
-	echo "  │  Building Go (EINO) binary by default.     │"
-	echo "  │  Set CLI_LLM_GO=n to skip.                 │"
-	echo "  └────────────────────────────────────────────┘"
-	echo ""
-
-	case "${CLI_LLM_GO:-y}" in
-	n | N | no | NO | 0)
-		info "Skipping Go build (CLI_LLM_GO=n)"
-		;;
-	*)
-		info "Building Go binary …"
-		(
-			cd "$PROJECT_ROOT/src-go"
-			go build -ldflags="-s -w -X github.com/Egg12138/cli-llm/src-go/internal/cli.Version=$(grep -m1 'Version =' internal/cli/root.go | cut -d'"' -f2)" -o "$PROJECT_ROOT/src-go/llm" ./cmd/llm/ 2>&1 | sed "s/^/  $LOG_PREFIX /"
-		)
-		GO_BIN="$PROJECT_ROOT/src-go/llm"
-		if [ -x "$GO_BIN" ]; then
-			cp "$GO_BIN" "$LOCAL_BIN/llm"
-			ok "Go binary installed → $LOCAL_BIN/llm (replaces Python wrapper)"
-		else
-			warn "Go build produced no expected binary at $GO_BIN; skipping install."
-		fi
-		;;
-	esac
-else
-	info "Go toolchain not found or src-go/ missing — skipping Go build."
-fi
-
-# ── phase 5: (optional) Rust binary ──────────────────────────
-
-if command_exists cargo && [ -f "$PROJECT_ROOT/src-rs/Cargo.toml" ]; then
-	echo ""
-	echo "  ┌─ Rust binary ──────────────────────────────┐"
-	echo "  │  A Rust implementation is available.        │"
-	echo "  │  Set CLI_LLM_RUST=y to build it.            │"
-	echo "  └────────────────────────────────────────────┘"
-	echo ""
-
-	case "${CLI_LLM_RUST:-}" in
-	y | Y | yes | YES | 1)
-		info "Building Rust binary …"
-		(
-			cd "$PROJECT_ROOT/src-rs"
-			cargo build --release 2>&1 | sed "s/^/  $LOG_PREFIX /"
-		)
-		RUST_BIN="$PROJECT_ROOT/src-rs/target/release/cli-llm"
-		if [ -x "$RUST_BIN" ]; then
-			cp "$RUST_BIN" "$LOCAL_BIN/llm"
-			ok "Rust binary installed → $LOCAL_BIN/llm (replaces Python wrapper)"
-		else
-			warn "Rust build produced no expected binary at $RUST_BIN; skipping install."
-		fi
-		;;
-	*)
-		info "Skipping Rust build (set CLI_LLM_RUST=y to enable)"
-		;;
-	esac
-else
-	info "Rust toolchain not found or src-rs/ missing — skipping Rust build."
-fi
-
-# ── phase 6: plugin discovery and installation ──────────────────
-
-_install_go_plugin() {
-	local name="$1"
-	local dir="$2"
-	info "Building plugin $name (Go) …"
-	(
-		cd "$PROJECT_ROOT/src-go"
-		go build -ldflags="-s -w -X github.com/Egg12138/cli-llm/src-go/internal/session/cli.Version=$(grep -m1 'Version =' internal/session/cli/version.go | cut -d'"' -f2)" -o "$PROJECT_ROOT/src-go/$name" "./cmd/$name/" 2>&1 | sed "s/^/  $LOG_PREFIX /"
-	)
-	local bin="$PROJECT_ROOT/src-go/$name"
-	if [ -x "$bin" ]; then
-		cp "$bin" "$LOCAL_BIN/$name"
-		ok "Plugin installed → $LOCAL_BIN/$name"
-		INSTALLED_PLUGINS+=("$name")
+version_at_least() {
+	local have="$1"
+	local need="$2"
+	local have_major have_minor have_patch need_major need_minor need_patch
+	IFS=. read -r have_major have_minor have_patch <<<"$have"
+	IFS=. read -r need_major need_minor need_patch <<<"$need"
+	have_minor=${have_minor:-0}
+	have_patch=${have_patch:-0}
+	need_minor=${need_minor:-0}
+	need_patch=${need_patch:-0}
+	if [ "$have_major" -ne "$need_major" ]; then
+		[ "$have_major" -gt "$need_major" ]
+	elif [ "$have_minor" -ne "$need_minor" ]; then
+		[ "$have_minor" -gt "$need_minor" ]
 	else
-		warn "Plugin $name build failed — skipping"
+		[ "$have_patch" -ge "$need_patch" ]
 	fi
 }
 
-# Discover available plugins
+check_python_prerequisites() {
+	check_info "Checking prerequisites for $TARGET_LABEL …"
+	[ -f "$PROJECT_ROOT/pyproject.toml" ] || fail "Python project metadata is missing: pyproject.toml"
+	[ -d "$PROJECT_ROOT/src/cli_llm" ] || fail "Python package source is missing: src/cli_llm"
+	check_ok "Project metadata and Python sources found."
+
+	local candidate
+	for candidate in python3 python; do
+		if command_exists "$candidate"; then
+			local version
+			version=$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)
+			if [ -n "$version" ]; then
+				local major="${version%%.*}"
+				local minor="${version#*.}"
+				if [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 9 ]; }; then
+					PYTHON_BIN="$candidate"
+					break
+				fi
+			fi
+		fi
+	done
+	[ -n "$PYTHON_BIN" ] || fail "Python >=3.9 is required for target Python but was not found."
+	check_ok "Toolchain: $($PYTHON_BIN --version 2>&1) ($(command -v "$PYTHON_BIN"))"
+
+	if command_exists uv; then
+		PACKAGE_MANAGER="uv"
+	elif command_exists pip3; then
+		PACKAGE_MANAGER="pip3"
+	elif command_exists pip; then
+		PACKAGE_MANAGER="pip"
+	else
+		fail "uv or pip is required for target Python but was not found."
+	fi
+
+	if [ "$PACKAGE_MANAGER" = "uv" ]; then
+		check_ok "Package manager: $(uv --version 2>&1 | head -n 1) ($(command -v uv))"
+	else
+		check_ok "Package manager: $($PACKAGE_MANAGER --version 2>&1 | head -n 1) ($(command -v "$PACKAGE_MANAGER"))"
+	fi
+
+	check_ok "Python prerequisite check complete."
+}
+
+check_go_prerequisites() {
+	check_info "Checking prerequisites for $TARGET_LABEL …"
+	[ -f "$PROJECT_ROOT/src-go/go.mod" ] || fail "Go module manifest is missing: src-go/go.mod"
+	[ -f "$PROJECT_ROOT/src-go/go.sum" ] || fail "Go module checksums are missing: src-go/go.sum"
+	[ -d "$PROJECT_ROOT/src-go/cmd/llm" ] || fail "Go command source is missing: src-go/cmd/llm"
+	check_ok "go.mod, go.sum, and command sources found."
+	command_exists go || fail "Go is required for target Go but was not found."
+
+	local toolchain required installed
+	toolchain=$(go version 2>&1)
+	required=$(sed -n 's/^go[[:space:]]\{1,\}\([0-9.]*\)$/\1/p' "$PROJECT_ROOT/src-go/go.mod" | head -n 1)
+	installed=$(printf '%s\n' "$toolchain" | sed -n 's/.* go\([0-9][0-9.]*\).*/\1/p')
+	[ -n "$required" ] && [ -n "$installed" ] || fail "Could not determine the required and installed Go versions."
+	version_at_least "$installed" "$required" || fail "Go >=$required is required; found $installed."
+	check_ok "Toolchain: $toolchain ($(command -v go)); requires >=$required."
+
+	check_ok "Go prerequisite check complete."
+}
+
+check_rust_prerequisites() {
+	check_info "Checking prerequisites for $TARGET_LABEL …"
+	[ -f "$PROJECT_ROOT/src-rs/Cargo.toml" ] || fail "Rust package manifest is missing: src-rs/Cargo.toml"
+	[ -f "$PROJECT_ROOT/src-rs/Cargo.lock" ] || fail "Rust dependency lockfile is missing: src-rs/Cargo.lock"
+	[ -f "$PROJECT_ROOT/src-rs/src/main.rs" ] || fail "Rust command source is missing: src-rs/src/main.rs"
+	check_ok "Cargo.toml, Cargo.lock, and command sources found."
+	command_exists cargo || fail "Cargo is required for target Rust but was not found."
+	command_exists rustc || fail "rustc is required for target Rust but was not found."
+	check_ok "Toolchain: $(rustc --version 2>&1) ($(command -v rustc))"
+	check_ok "Build tool: $(cargo --version 2>&1) ($(command -v cargo))"
+
+	check_ok "Rust prerequisite check complete."
+}
+
+install_python() {
+
+	info "Step 1/3: Installing the Python package (editable mode) …"
+	if [ "$PACKAGE_MANAGER" = "uv" ]; then
+		uv pip install --editable "$PROJECT_ROOT" 2>&1 | sed "s/^/  $LOG_PREFIX /"
+	else
+		"$PACKAGE_MANAGER" install --editable "$PROJECT_ROOT" 2>&1 | sed "s/^/  $LOG_PREFIX /"
+	fi
+	ok "Step 1/3 complete: Python package installed."
+
+	info "Step 2/3: Installing development extras …"
+	if [ "$PACKAGE_MANAGER" = "uv" ]; then
+		uv pip install --editable "$PROJECT_ROOT[dev]" 2>&1 | sed "s/^/  $LOG_PREFIX /" || warn "Development extras were not installed."
+	else
+		"$PACKAGE_MANAGER" install --editable "$PROJECT_ROOT[dev]" 2>&1 | sed "s/^/  $LOG_PREFIX /" || warn "Development extras were not installed."
+	fi
+	ok "Step 2/3 complete: Development extras processed."
+
+	info "Step 3/3: Installing executable → $LOCAL_BIN/llm"
+	local entry_point
+	entry_point=$("$PYTHON_BIN" -c 'import os, sys; p = os.path.join(sys.prefix, "bin", "llm"); print(p if os.path.exists(p) else "")' 2>/dev/null || true)
+	if [ -n "$entry_point" ] && [ -x "$entry_point" ]; then
+		ln -sf "$entry_point" "$LOCAL_BIN/llm"
+	else
+		{
+			printf '%s\n' '#!/usr/bin/env bash'
+			printf '%s\n' 'PYTHON="${CLI_LLM_PYTHON:-python3}"'
+			printf '%s\n' 'exec "$PYTHON" -m cli_llm "$@"'
+		} >"$LOCAL_BIN/llm"
+		chmod +x "$LOCAL_BIN/llm"
+	fi
+	ok "Step 3/3 complete: Python executable installed → $LOCAL_BIN/llm"
+}
+
+install_go() {
+	info "Step 1/2: Building ./cmd/llm …"
+	(
+		cd "$PROJECT_ROOT/src-go"
+		go build -ldflags="-s -w -X github.com/Egg12138/cli-llm/src-go/internal/cli.Version=$VERSION" -o "$PROJECT_ROOT/src-go/llm" ./cmd/llm/ 2>&1 | sed "s/^/  $LOG_PREFIX /"
+	)
+	ok "Step 1/2 complete: Go binary built."
+
+	info "Step 2/2: Installing executable → $LOCAL_BIN/llm"
+	cp "$PROJECT_ROOT/src-go/llm" "$LOCAL_BIN/llm"
+	chmod +x "$LOCAL_BIN/llm"
+	ok "Step 2/2 complete: Go executable installed → $LOCAL_BIN/llm"
+}
+
+install_rust() {
+	info "Step 1/2: Building release binary …"
+	(
+		cd "$PROJECT_ROOT/src-rs"
+		cargo build --release 2>&1 | sed "s/^/  $LOG_PREFIX /"
+	)
+	ok "Step 1/2 complete: Rust release binary built."
+
+	local binary="$PROJECT_ROOT/src-rs/target/release/cli-llm"
+	[ -x "$binary" ] || fail "Rust build produced no executable at $binary"
+	info "Step 2/2: Installing executable → $LOCAL_BIN/llm"
+	cp "$binary" "$LOCAL_BIN/llm"
+	chmod +x "$LOCAL_BIN/llm"
+	ok "Step 2/2 complete: Rust executable installed → $LOCAL_BIN/llm"
+}
+
+case "$TARGET" in
+	python) check_python_prerequisites ;;
+	go) check_go_prerequisites ;;
+	rust) check_rust_prerequisites ;;
+esac
+
+mkdir -p "$LOCAL_BIN"
+
+case "$TARGET" in
+	python) install_python ;;
+	go) install_go ;;
+	rust) install_rust ;;
+esac
+
+if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
+	warn "$LOCAL_BIN is not on your PATH."
+	info "Add this to your shell rc file: export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
+_install_go_plugin() {
+	local name="$1"
+	local version
+	version=$(sed -n 's/^var Version = "\([^"]*\)"/\1/p' "$PROJECT_ROOT/src-go/internal/session/cli/version.go" | head -n 1)
+	info "Plugin target: $name (Go, ${version:-unknown version})"
+	info "Plugin toolchain: $(go version 2>&1)"
+	info "Building plugin $name …"
+	(
+		cd "$PROJECT_ROOT/src-go"
+		go build -ldflags="-s -w -X github.com/Egg12138/cli-llm/src-go/internal/session/cli.Version=$version" -o "$PROJECT_ROOT/src-go/$name" "./cmd/$name/" 2>&1 | sed "s/^/  $LOG_PREFIX /"
+	)
+	cp "$PROJECT_ROOT/src-go/$name" "$LOCAL_BIN/$name"
+	chmod +x "$LOCAL_BIN/$name"
+	ok "Plugin installed → $LOCAL_BIN/$name"
+	INSTALLED_PLUGINS+=("$name")
+}
+
 PLUGIN_NAMES=()
-PLUGIN_DIRS=()
 PLUGIN_TYPES=()
 PLUGIN_DESCS=()
 INSTALLED_PLUGINS=()
 
-# Scan Go plugins (src-go/cmd/llm-* directories)
 if [ -d "$PROJECT_ROOT/src-go/cmd" ]; then
 	for plugin_dir in "$PROJECT_ROOT/src-go/cmd"/llm-*; do
 		[ -d "$plugin_dir" ] || continue
 		[ -f "$plugin_dir/main.go" ] || continue
 		pname="$(basename "$plugin_dir")"
-		pdesc=$(head -20 "$plugin_dir/main.go" 2>/dev/null | grep -m1 '//' | sed 's|//[[:space:]]*||')
+		pdesc=$(sed -n 's|^//[[:space:]]*||p' "$plugin_dir/main.go" | head -n 1)
 		[ -z "$pdesc" ] && pdesc="Go plugin"
 		PLUGIN_NAMES+=("$pname")
-		PLUGIN_DIRS+=("$plugin_dir")
 		PLUGIN_TYPES+=("go")
 		PLUGIN_DESCS+=("$pdesc")
 	done
 fi
 
 plugin_count=${#PLUGIN_NAMES[@]}
-
 if [ "$plugin_count" -gt 0 ]; then
-	echo ""
-	echo "  ┌─ Plugins ──────────────────────────────────┐"
-	echo "  │  The following plugins were discovered:     │"
-	for ((pi=0; pi<plugin_count; pi++)); do
-		display_name="${PLUGIN_NAMES[$pi]#llm-}"
-		printf "  │  [%d] %-20s — %s\n" "$((pi+1))" "$display_name" "${PLUGIN_DESCS[$pi]}"
+	printf '\n'
+	printf '  Available plugins:\n'
+	for ((pi = 0; pi < plugin_count; pi++)); do
+		printf '    [%d] %-20s — %s\n' "$((pi + 1))" "${PLUGIN_NAMES[$pi]#llm-}" "${PLUGIN_DESCS[$pi]}"
 	done
-	echo "  └─────────────────────────────────────────────┘"
-	echo ""
-	echo "  Enter numbers to install (space-separated),"
-	echo "  'all' for all, or press Enter to skip:"
-	printf "  > "
-	read -r selection
+	printf '\n  Enter numbers to install (space-separated), all, or Enter to skip:\n  > '
+	selection=""
+	read -r selection || true
 
-	case "${selection:-}" in
-		"" | none | skip)
-			info "Skipping plugin installation."
-			;;
-		all | a | ALL)
-			for ((pi=0; pi<plugin_count; pi++)); do
-				case "${PLUGIN_TYPES[$pi]}" in
-					go)
-						if command_exists go; then
-							_install_go_plugin "${PLUGIN_NAMES[$pi]}" "${PLUGIN_DIRS[$pi]}"
-						else
-							warn "Go not found — cannot build ${PLUGIN_NAMES[$pi]} (skipping)"
-						fi
-						;;
-					*)
-						warn "Unknown plugin type '${PLUGIN_TYPES[$pi]}' for ${PLUGIN_NAMES[$pi]} — skipping"
-						;;
-				esac
-			done
-			;;
-		*)
-			for num in $selection; do
-				case "$num" in
-					''|*[!0-9]*) continue ;;
-				esac
-				if [ "$num" -ge 1 ] 2>/dev/null && [ "$num" -le "$plugin_count" ] 2>/dev/null; then
-					idx=$((num-1))
-					case "${PLUGIN_TYPES[$idx]}" in
-						go)
-							if command_exists go; then
-								_install_go_plugin "${PLUGIN_NAMES[$idx]}" "${PLUGIN_DIRS[$idx]}"
-							else
-								warn "Go not found — cannot build ${PLUGIN_NAMES[$idx]} (skipping)"
-							fi
-							;;
-						*)
-							warn "Unknown plugin type '${PLUGIN_TYPES[$idx]}' for ${PLUGIN_NAMES[$idx]} — skipping"
-							;;
-					esac
+	if [ "$selection" = "all" ] || [ "$selection" = "a" ] || [ "$selection" = "ALL" ]; then
+		selection=""
+		for ((pi = 1; pi <= plugin_count; pi++)); do
+			selection+=" $pi"
+		done
+	fi
+
+	if [ -z "$selection" ] || [ "$selection" = "none" ] || [ "$selection" = "skip" ]; then
+		info "Skipping plugin installation."
+	else
+		for num in $selection; do
+			case "$num" in
+			'' | *[!0-9]*) continue ;;
+			esac
+			if [ "$num" -ge 1 ] && [ "$num" -le "$plugin_count" ]; then
+				idx=$((num - 1))
+				if [ "${PLUGIN_TYPES[$idx]}" = "go" ] && command_exists go; then
+					_install_go_plugin "${PLUGIN_NAMES[$idx]}"
+				else
+					warn "Go not found — cannot build ${PLUGIN_NAMES[$idx]} (skipping)"
 				fi
-			done
-			;;
-	esac
+			fi
+		done
+	fi
 fi
-
-# ── phase 7: config directory ────────────────────────────────
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cli-llm"
 mkdir -p "$CONFIG_DIR"
-
 if [ -f "$PROJECT_ROOT/config.sample.toml" ] && [ ! -f "$CONFIG_DIR/config.toml" ]; then
 	cp "$PROJECT_ROOT/config.sample.toml" "$CONFIG_DIR/config.toml"
 	ok "Created default config → $CONFIG_DIR/config.toml"
@@ -350,59 +390,32 @@ else
 	warn "No config.sample.toml found; skipping config setup."
 fi
 
-# Ensure the legacy ~/.cli-llm/ path is also present for backward compat
-if [ "$CONFIG_DIR" != "$HOME/.cli-llm" ]; then
-	LEGACY_DIR="$HOME/.cli-llm"
-	if [ ! -d "$LEGACY_DIR" ]; then
-		mkdir -p "$LEGACY_DIR"
-		# Symlink to the XDG config path so both work
-		ln -sfn "$CONFIG_DIR" "$LEGACY_DIR" 2>/dev/null || true
-		ok "Created legacy symlink: $LEGACY_DIR → $CONFIG_DIR"
-	fi
+if [ "$CONFIG_DIR" != "$HOME/.cli-llm" ] && [ ! -e "$HOME/.cli-llm" ]; then
+	ln -s "$CONFIG_DIR" "$HOME/.cli-llm" 2>/dev/null || true
+	ok "Created legacy symlink: $HOME/.cli-llm → $CONFIG_DIR"
 fi
-
-# ── phase 8: shell helpers (optional) ────────────────────────
 
 if [ -f "$PROJECT_ROOT/llm_bash.sh" ]; then
-	SHELL_RC="${HOME}/.bashrc"
-	if [ -f "$HOME/.zshrc" ]; then
-		SHELL_RC="$HOME/.zshrc"
-	fi
-	echo ""
-	echo "  ┌─ Shell helpers ───────────────────────────┐"
-	echo "  │  llm_bash.sh provides API switching        │"
-	echo "  │  functions (api-glm, api-qwen, …).         │"
-	echo "  └────────────────────────────────────────────┘"
-	echo ""
-	info "To enable shell helpers, add this to $SHELL_RC:"
-	echo ""
-	echo "    source \"$PROJECT_ROOT/llm_bash.sh\""
-	echo ""
-	info "(Or run it directly: source llm_bash.sh)"
+	SHELL_RC="$HOME/.bashrc"
+	[ -f "$HOME/.zshrc" ] && SHELL_RC="$HOME/.zshrc"
+	info "Optional shell helpers: add 'source \"$PROJECT_ROOT/llm_bash.sh\"' to $SHELL_RC"
 fi
 
-	# ── done ─────────────────────────────────────────────────────
-
-	echo ""
-	echo "  ┌──────────────────────────────────────┐"
-	echo "  │  \e[1mcli-llm installation complete\e[0m      │"
-	echo "  └──────────────────────────────────────┘"
-	echo ""
-	echo "    Run \`llm --help\` to verify the CLI works."
-	echo "    Run \`llm chat\` to start a conversation."
-	if [ ${#INSTALLED_PLUGINS[@]} -gt 0 ]; then
-		for p in "${INSTALLED_PLUGINS[@]}"; do
-			local_name="${p#llm-}"
-			echo "    Run \`llm ${local_name}\` to use the ${local_name} plugin."
-		done
-	fi
-	echo ""
-	echo "    Binary:      $LOCAL_BIN/llm"
-	if [ ${#INSTALLED_PLUGINS[@]} -gt 0 ]; then
-		for p in "${INSTALLED_PLUGINS[@]}"; do
-			echo "    Plugin:      $LOCAL_BIN/$p"
-		done
-	fi
-	echo "    Config file: $CONFIG_DIR/config.toml"
-	echo "    Project:     $PROJECT_ROOT"
-	echo ""
+printf '\n'
+printf '  ╭──────────────────────────────────────╮\n'
+printf '  │  \033[1m%-36s\033[0m │\n' 'cli-llm installation complete'
+printf '  ╰──────────────────────────────────────╯\n'
+printf '\n'
+printf '    Run `llm --help` to verify the CLI works.\n'
+printf '    Run `llm chat` to start a conversation.\n'
+for plugin in "${INSTALLED_PLUGINS[@]}"; do
+	printf '    Run `llm %s` to use the %s plugin.\n' "${plugin#llm-}" "${plugin#llm-}"
+done
+printf '\n'
+printf '    Installed:   cli-llm %s (%s)\n' "$VERSION" "$TARGET_LABEL"
+printf '    Binary:      %s/llm\n' "$LOCAL_BIN"
+for plugin in "${INSTALLED_PLUGINS[@]}"; do
+	printf '    Plugin:      %s/%s\n' "$LOCAL_BIN" "$plugin"
+done
+printf '    Config file: %s/config.toml\n' "$CONFIG_DIR"
+printf '    Project:     %s\n\n' "$PROJECT_ROOT"
