@@ -34,6 +34,12 @@ func TestSessionPTY(t *testing.T) {
 	if requests := h.mock.Requests(); len(requests) != 0 {
 		t.Fatalf("help contacted provider: %#v", requests)
 	}
+	autoCompleteStart := len(h.Raw())
+	h.Send("automatic-command-completion", []byte("/bra\r"))
+	h.WaitRawSequenceAfter(autoCompleteStart, "main", "Enter send")
+	if segment := h.Raw()[autoCompleteStart:]; strings.Contains(segment, "unknown command") {
+		t.Fatalf("Enter did not apply the default /branches completion: %q", segment)
+	}
 
 	listStart := len(h.Raw())
 	h.Send("completion-list", []byte("/"))

@@ -176,6 +176,8 @@ delete/change/yank operators, `yy`, `p/P`, and undo are available. The active
 mode is always shown in the prompt footer. Normal chat displays blue `You ›`
 and green `Assistant ›` role labels with a blank line between message blocks;
 slash-command results are dimmed so they remain visually separate from chat.
+Pressing Enter on an incomplete slash command executes the selected completion,
+which defaults to the first candidate (for example, `/ex` executes `/exit`).
 Set any non-empty `NO_COLOR` value to disable these styles while preserving the
 labels and spacing.
 

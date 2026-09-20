@@ -226,7 +226,7 @@ func (h *ptyHarness) Snapshot() (screen string, scrollback string, alt bool) {
 
 func (h *ptyHarness) Exit() {
 	h.t.Helper()
-	h.Send("exit", []byte("/exit\r"))
+	h.Send("exit-default-completion", []byte("/ex\r"))
 	select {
 	case err := <-h.waitDone:
 		if err != nil {

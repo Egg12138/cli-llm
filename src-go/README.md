@@ -89,3 +89,5 @@ Normal chat uses blue `You ›` and green `Assistant ›` labels with a blank
 line between message blocks. Slash-command output is dimmed; setting any
 non-empty `NO_COLOR` value removes color and dim styling without removing the
 labels or spacing.
+Enter executes the selected completion for an incomplete slash command, using
+the first candidate by default; Tab still expands the candidate for editing.

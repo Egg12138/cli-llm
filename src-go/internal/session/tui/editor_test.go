@@ -52,6 +52,27 @@ func TestEditorShowsAndAppliesCommandCompletion(t *testing.T) {
 	}
 }
 
+func TestEditorEnterAppliesDefaultCommandCompletion(t *testing.T) {
+	m := NewEditorModel("> ")
+	m = updateEditor(t, m, keyRunes("/ex"))
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if got := m.Event().Line; got != "/exit" {
+		t.Fatalf("submitted completion = %q, want /exit", got)
+	}
+}
+
+func TestEditorEnterAppliesSelectedCommandCompletion(t *testing.T) {
+	m := NewEditorModel("> ")
+	m = updateEditor(t, m, keyRunes("/"))
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	m = updateEditor(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if got := m.Event().Line; got != "/checkpoint " {
+		t.Fatalf("submitted completion = %q, want /checkpoint with argument space", got)
+	}
+}
+
 func TestEditorCompletionPreservesArguments(t *testing.T) {
 	m := NewEditorModel("> ")
 	m = updateEditor(t, m, keyRunes("/sw  功能 分支"))

@@ -56,8 +56,12 @@ func (m EditorModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.editor.Value() == "" {
 			return m, nil
 		}
+		line := m.editor.Value()
+		if len(m.matches) > 0 {
+			line, _ = sessionrepl.ApplyCompletion(line, m.cursor(), m.matches[m.selected])
+		}
 		m.done = true
-		m.event = sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: m.editor.Value()}
+		m.event = sessionrepl.InputEvent{Kind: sessionrepl.EventLine, Line: line}
 		return m, tea.Quit
 	case tea.KeyCtrlJ:
 		m.enterInsertForNewline()
