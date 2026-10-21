@@ -18,8 +18,8 @@ maturity and version numbers:
 | Runtime | Version source | Status |
 |---|---|---|
 | Python | `pyproject.toml` (`0.3.0`) | Primary packaged/supported runtime for the shared CLI surface. |
-| Go/Eino | `src-go/internal/cli/root.go` (`0.5.0`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
-| Go session plugin | `src-go/internal/session/cli/version.go` (`0.5.0`) | Bundled Go-only plugin installed as `llm-session`. |
+| Go/Eino | `src-go/internal/cli/root.go` (`0.5.1`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
+| Go session plugin | `src-go/internal/session/cli/version.go` (`0.5.1`) | Bundled Go-only plugin installed as `llm-session`. |
 | Rust | `src-rs/Cargo.toml` (`0.1.0`) | Dormant prototype; buildable, but not on an active parity track. |
 
 Do not assume a single repository-wide version. Update the source of truth for
@@ -175,6 +175,8 @@ llm-session --resume          # list sessions, then select by number or exact na
 llm-session --resume NAME     # resume by filename stem; errors if it is missing
 llm-session --continue        # continue the most recently modified session (-c)
 llm-session --no-tui          # line-oriented input path
+llm-session --replay          # force history replay on resume
+llm-session --no-replay       # resume without replaying history
 llm session ...               # same plugin through root dispatch
 ```
 
@@ -187,15 +189,20 @@ The `--resume` picker reads one line at a time from stdin, accepts a 1-based
 index or an exact session name/title, re-prompts on invalid input, and treats an
 empty line or EOF as a clean cancellation (exit 0, no session started). It must
 not consume input beyond that single line, because the session editor reads the
-same stdin immediately afterwards. Sessions are listed by modification time
+same stdin immediately afterwards. The picker listing, its prompt, and the resume
+banner are written to stderr; stdout stays reserved for conversation output.
+Sessions are listed by modification time
 (most recent first) with their persisted session title, and `--continue`/`-c`
 resumes the first entry. A named resume of a missing file fails instead of
 starting an empty session, and unreadable JSONL lines are skipped with a
 warning that reports their line numbers. Resume restores the model recorded in
 `custom:session_info`, switching to another provider profile when that profile
 lists the model; an unresolvable model falls back to the configured model with
-a warning. The active branch is still always `main` after a restart (see
-"Known gaps").
+a warning. A resumed session replays its branch history (projected through the
+newest compaction) into the terminal main buffer before the prompt, so prior
+turns are visible without opening the transcript overlay; `--replay` forces the
+replay for non-terminal stdout and `--no-replay` disables it. The active branch
+is still always `main` after a restart (see "Known gaps").
 
 Before a turn, history at or above the compression threshold is summarized; the
 `compaction` entry is appended at the current leaf and becomes the new head, so

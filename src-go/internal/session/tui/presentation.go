@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -65,6 +66,71 @@ func (p Presentation) WriteUser(input string) error {
 
 func (p Presentation) NewAssistantWriter() *AssistantWriter {
 	return &AssistantWriter{out: p.out, label: p.assistantLabel}
+}
+
+// WriteHistory replays a resumed session's history into the terminal main
+// buffer with the same role labels as live turns, so the previous conversation
+// is visible immediately instead of only through the transcript overlay.
+func (p Presentation) WriteHistory(entries []model.Entry) error {
+	for _, entry := range entries {
+		switch entry.Type {
+		case model.EntryTypeMessage:
+			data, err := entry.MessageData()
+			if err != nil {
+				return err
+			}
+			switch data.Role {
+			case "user":
+				if err := p.WriteUser(data.Content); err != nil {
+					return err
+				}
+			case "assistant":
+				if err := p.writeAssistant(data.Content); err != nil {
+					return err
+				}
+			}
+		case model.EntryTypeCompaction:
+			data, err := entry.CompactionData()
+			if err != nil {
+				return err
+			}
+			if err := p.writeSummaryNote("earlier context compacted", data.Summary); err != nil {
+				return err
+			}
+		case model.EntryTypeBranchSummary:
+			data, err := entry.BranchSummaryData()
+			if err != nil {
+				return err
+			}
+			if err := p.writeSummaryNote("branch summary", data.Summary); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (p Presentation) writeAssistant(content string) error {
+	assistant := p.NewAssistantWriter()
+	if _, err := assistant.Write([]byte(content)); err != nil {
+		return err
+	}
+	return assistant.Finish()
+}
+
+func (p Presentation) writeSummaryNote(label, summary string) error {
+	if _, err := fmt.Fprintf(p.CommandWriter(), "\u2500\u2500 %s \u2500\u2500\n", label); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(p.out, summary); err != nil {
+		return err
+	}
+	if strings.HasSuffix(summary, "\n") {
+		_, err := fmt.Fprintln(p.out)
+		return err
+	}
+	_, err := fmt.Fprint(p.out, "\n\n")
+	return err
 }
 
 func (p Presentation) CommandWriter() io.Writer {

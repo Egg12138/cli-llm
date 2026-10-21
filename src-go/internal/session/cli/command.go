@@ -23,10 +23,23 @@ const (
 	ModeContinue     Mode = "continue"
 )
 
+// ReplayMode controls whether a resumed session replays its history into the
+// terminal main buffer before the prompt appears.
+type ReplayMode string
+
+const (
+	// ReplayAuto replays history when the session renders to a terminal; piped
+	// or redirected stdout stays free of conversation output.
+	ReplayAuto ReplayMode = ""
+	ReplayOn   ReplayMode = "on"
+	ReplayOff  ReplayMode = "off"
+)
+
 type Options struct {
-	Mode  Mode
-	Name  string
-	NoTUI bool
+	Mode   Mode
+	Name   string
+	NoTUI  bool
+	Replay ReplayMode
 }
 
 type Runner interface {
@@ -48,6 +61,8 @@ func Parse(args []string) (Options, error) {
 	continueShort := flags.Bool("c", false, "continue the most recent session (shorthand)")
 	showVersion := flags.Bool("version", false, "print version and exit")
 	noTUI := flags.Bool("no-tui", false, "disable TUI mode (line-based REPL)")
+	replay := flags.Bool("replay", false, "always replay resumed history")
+	noReplay := flags.Bool("no-replay", false, "never replay resumed history")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return Options{Mode: ModeHelp}, nil
@@ -63,6 +78,16 @@ func Parse(args []string) (Options, error) {
 	if resumeMode && continueMode {
 		return Options{}, fmt.Errorf("--resume and --continue are mutually exclusive")
 	}
+	if *replay && *noReplay {
+		return Options{}, fmt.Errorf("--replay and --no-replay are mutually exclusive")
+	}
+	replayMode := ReplayAuto
+	if *replay {
+		replayMode = ReplayOn
+	}
+	if *noReplay {
+		replayMode = ReplayOff
+	}
 
 	rest := flags.Args()
 	if len(rest) > 1 {
@@ -73,18 +98,18 @@ func Parse(args []string) (Options, error) {
 		if len(rest) > 0 {
 			return Options{}, fmt.Errorf("session name requires --resume")
 		}
-		return Options{Mode: ModeContinue, NoTUI: *noTUI}, nil
+		return Options{Mode: ModeContinue, NoTUI: *noTUI, Replay: replayMode}, nil
 	}
 	if !resumeMode {
 		if len(rest) > 0 {
 			return Options{}, fmt.Errorf("session name requires --resume")
 		}
-		return Options{Mode: ModeFresh, NoTUI: *noTUI}, nil
+		return Options{Mode: ModeFresh, NoTUI: *noTUI, Replay: replayMode}, nil
 	}
 	if len(rest) == 0 {
-		return Options{Mode: ModeResumePicker, NoTUI: *noTUI}, nil
+		return Options{Mode: ModeResumePicker, NoTUI: *noTUI, Replay: replayMode}, nil
 	}
-	return Options{Mode: ModeResumeNamed, Name: rest[0], NoTUI: *noTUI}, nil
+	return Options{Mode: ModeResumeNamed, Name: rest[0], NoTUI: *noTUI, Replay: replayMode}, nil
 }
 
 func Run(args []string, runner Runner) int {
@@ -123,7 +148,11 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  llm-session --resume        Pick a session to resume (-r)")
 	fmt.Fprintln(out, "  llm-session --resume NAME   Resume NAME")
 	fmt.Fprintln(out, "  llm-session --continue      Continue the most recent session (-c)")
-	fmt.Fprintln(out, "  llm-session --no-tui         Disable TUI (line-based REPL)")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Options:")
+	fmt.Fprintln(out, "  --replay                    Always replay the resumed conversation history")
+	fmt.Fprintln(out, "  --no-replay                 Never replay the resumed conversation history")
+	fmt.Fprintln(out, "  --no-tui                    Disable TUI (line-based REPL)")
 }
 
 func Main(args []string) int {

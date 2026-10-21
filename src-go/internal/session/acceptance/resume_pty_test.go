@@ -38,6 +38,18 @@ func TestSessionResumePickerPTY(t *testing.T) {
 	h.Send("resume-select-second", []byte("2\r"))
 	h.WaitRawSequenceAfter(resumeStart, "Enter send")
 
+	// A resumed session replays its history into the main buffer, so the
+	// previous turns are visible without opening the transcript overlay.
+	replayed := h.Raw()[resumeStart:]
+	for _, want := range []string{"You \u203a", "beta question", "Assistant \u203a", "BETA_HISTORY"} {
+		if !strings.Contains(replayed, want) {
+			t.Fatalf("resume output %q missing replayed %q", replayed, want)
+		}
+	}
+	if strings.Contains(replayed, "ALPHA_HISTORY") {
+		t.Fatalf("resume replayed the unselected session: %q", replayed)
+	}
+
 	turnStart := len(h.Raw())
 	h.Send("resume-turn", []byte("after resume\r"))
 	h.WaitRawSequenceAfter(turnStart, "after resume", "ACK", "Enter send")

@@ -27,7 +27,7 @@ func MaybeCompress(ctx context.Context, req CompressionRequest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	text := historyText(projectHistory(history))
+	text := historyText(ProjectHistory(history))
 	tokensBefore, err := sessiontoken.CountText(text, req.ModelName)
 	if err != nil {
 		return false, err

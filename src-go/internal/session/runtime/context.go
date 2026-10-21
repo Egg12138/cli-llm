@@ -18,7 +18,7 @@ func BuildMessages(state graph.State, opts ContextOptions) ([]*schema.Message, e
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range projectHistory(history) {
+	for _, entry := range ProjectHistory(history) {
 		switch entry.Type {
 		case model.EntryTypeMessage:
 			data, err := entry.MessageData()
@@ -50,11 +50,11 @@ func BuildMessages(state graph.State, opts ContextOptions) ([]*schema.Message, e
 	return messages, nil
 }
 
-// projectHistory applies the newest compaction on the path. The summary is
+// ProjectHistory applies the newest compaction on the path. The summary is
 // placed first, followed by the entries after firstKeptEntryId; everything
 // older (including earlier compactions) is dropped from the model context but
 // remains in the append-only file.
-func projectHistory(history []model.Entry) []model.Entry {
+func ProjectHistory(history []model.Entry) []model.Entry {
 	last := -1
 	for i, entry := range history {
 		if entry.Type == model.EntryTypeCompaction {

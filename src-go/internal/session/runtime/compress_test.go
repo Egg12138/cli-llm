@@ -104,7 +104,7 @@ func TestCompressionAddsCompactionAtTheLeafAndKeepsRecentMessages(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ReachableHistory returned error: %v", err)
 	}
-	projected := projectHistory(history)
+	projected := ProjectHistory(history)
 	if len(projected) != 2 || projected[0].Type != model.EntryTypeCompaction || projected[1].ID != recent.ID {
 		t.Fatalf("expected projected compaction -> recent chain, got %#v", projected)
 	}

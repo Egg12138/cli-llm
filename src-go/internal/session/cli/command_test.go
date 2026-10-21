@@ -235,6 +235,35 @@ func TestCommandRejectsConflictingSessionSelection(t *testing.T) {
 	}
 }
 
+func TestParseReplayFlags(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		args []string
+		want ReplayMode
+	}{
+		{name: "default", args: []string{"--resume", "work"}, want: ReplayAuto},
+		{name: "pick", args: []string{"--resume"}, want: ReplayAuto},
+		{name: "replay", args: []string{"--replay", "--resume", "work"}, want: ReplayOn},
+		{name: "no-replay", args: []string{"--no-replay", "--resume", "work"}, want: ReplayOff},
+		{name: "continue", args: []string{"--continue", "--no-replay"}, want: ReplayOff},
+	}
+	for _, tc := range cases {
+		options, err := Parse(tc.args)
+		if err != nil {
+			t.Fatalf("args %v returned error: %v", tc.args, err)
+		}
+		if options.Replay != tc.want {
+			t.Fatalf("args %v parsed replay %q, want %q", tc.args, options.Replay, tc.want)
+		}
+	}
+
+	if _, err := Parse([]string{"--replay", "--no-replay"}); err == nil {
+		t.Fatal("conflicting replay flags should be rejected")
+	}
+}
+
 func TestDefaultAppConfigReadsEnvironmentAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "env-session-key")
 	t.Setenv("OPENAI_BASE_URL", "https://env-session.example/v1")

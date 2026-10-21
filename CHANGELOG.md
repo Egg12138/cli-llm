@@ -6,6 +6,21 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+## [0.5.1] – 2026-10-21
+
+### Added
+- `llm-session` replays a resumed session's history into the terminal main
+  buffer before the prompt appears, so previous turns are visible right away
+  instead of only through the Ctrl+T transcript overlay. The replay follows the
+  active branch and begins with the newest compaction summary.
+- `--replay` forces that history replay (useful when stdout is not a terminal)
+  and `--no-replay` disables it; without either flag, replay happens only when
+  the session writes to a terminal.
+
+### Changed
+- The `--resume` picker listing and prompt, previously printed to stdout, now
+  go to stderr so stdout stays reserved for conversation output.
+
 ## [0.5.0] – 2026-10-21
 
 ### Added

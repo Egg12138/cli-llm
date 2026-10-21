@@ -41,12 +41,13 @@ type SessionSummary struct {
 }
 
 type StartREPLRequest struct {
-	Name   string
-	State  *graph.State
-	Store  SessionStore
-	Model  einomodel.BaseChatModel
-	Config config.AppConfig
-	NoTUI  bool
+	Name          string
+	State         *graph.State
+	Store         SessionStore
+	Model         einomodel.BaseChatModel
+	Config        config.AppConfig
+	NoTUI         bool
+	ReplayHistory bool
 }
 
 type RunnerDeps struct {
@@ -120,13 +121,31 @@ func (r SessionRunner) Run(options Options) error {
 		fmt.Fprintf(r.deps.Stderr, "resumed %s (%d entries, model %s)\n", name, len(state.Entries), chatConfig.DefaultModel)
 	}
 	return r.deps.StartREPLFunc(StartREPLRequest{
-		Name:   name,
-		State:  state,
-		Store:  store,
-		Model:  chatModel,
-		Config: chatConfig,
-		NoTUI:  options.NoTUI,
+		Name:          name,
+		State:         state,
+		Store:         store,
+		Model:         chatModel,
+		Config:        chatConfig,
+		NoTUI:         options.NoTUI,
+		ReplayHistory: r.shouldReplayHistory(options, state),
 	})
+}
+
+// shouldReplayHistory decides whether a resumed conversation is written straight
+// into the terminal main buffer. Replay is on by default for terminals so a
+// resumed session shows its prior turns immediately; redirected or piped stdout
+// stays free of conversation output unless --replay asks for it.
+func (r SessionRunner) shouldReplayHistory(options Options, state *graph.State) bool {
+	if options.Mode == ModeFresh || state == nil || state.HeadID == "" {
+		return false
+	}
+	switch options.Replay {
+	case ReplayOn:
+		return true
+	case ReplayOff:
+		return false
+	}
+	return isTerminalWriter(r.deps.Stdout)
 }
 
 func (r SessionRunner) resolveName(options Options) (string, error) {
@@ -194,7 +213,9 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	}
 	if d.PickSessionFunc == nil {
 		d.PickSessionFunc = func(summaries []SessionSummary) (string, error) {
-			return pickSession(d.Stdout, d.Stdin, summaries)
+			// The picker is interface chrome, not conversation output, so it goes
+			// to stderr and leaves stdout for the session transcript.
+			return pickSession(d.Stderr, d.Stdin, summaries)
 		}
 	}
 	if d.StartREPLFunc == nil {
@@ -469,6 +490,15 @@ func runREPLSession(req StartREPLRequest, d RunnerDeps) error {
 func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.InputReader) error {
 	sessionName := req.Name
 	presentation := sessiontui.NewPresentation(d.Stdout, colorsEnabled(d.Stdout))
+	if req.ReplayHistory {
+		history, err := req.State.ReachableHistory()
+		if err != nil {
+			return err
+		}
+		if err := presentation.WriteHistory(sessionruntime.ProjectHistory(history)); err != nil {
+			return err
+		}
+	}
 	runner := sessionrepl.ChatRunner(chatRunnerFunc(func(input string) error {
 		if err := presentation.WriteUser(input); err != nil {
 			return err

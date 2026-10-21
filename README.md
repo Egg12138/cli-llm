@@ -5,7 +5,7 @@ The project currently targets team workflows only; no public release is schedule
 
 ## Status
 - **Current train**: `0.5.x – Session Resume & Context Management`
-- **Latest milestone**: `0.5.0` (resume picker/continue, tolerant session loading, durable compaction, model restoration)
+- **Latest milestone**: `0.5.1` (resume history replay, resume picker on stderr, resume picker/continue, tolerant session loading, durable compaction, model restoration)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
@@ -37,6 +37,12 @@ The project currently targets team workflows only; no public release is schedule
 - Resume restores the recorded model, including cross-profile resolution with a
   warned fallback.
 - Request retry, highlighted errors, and prompt continuation after a failed turn.
+- Resumed sessions replay their branch history into the terminal main buffer
+  before the prompt, applying the newest compaction summary first (0.5.1).
+- `--replay` / `--no-replay` control the replay; it defaults to on for terminal
+  output and stays off when stdout is redirected (0.5.1).
+- The `--resume` picker and resume banner write to stderr so stdout carries only
+  conversation output (0.5.1).
 
 > The roadmap is intentionally iterative; adjust milestones as new evidence appears.
 
@@ -168,6 +174,7 @@ Put the built `llm-session` binary on `PATH` to run either form:
 llm-session
 llm-session --resume          # or -r
 llm-session --resume work
+llm-session --resume --no-replay
 llm-session --continue        # or -c: most recent session
 llm session --resume work
 ```
@@ -176,12 +183,19 @@ Sessions are stored as append-only JSONL files in
 `~/.cli-llm/sessions/<name>.jsonl`. With no name, `--resume` prints a numbered
 list ordered by most recently used, showing each session's persisted title, and
 prompts for a number or exact name/title; an empty line (or EOF) cancels and
-exits without starting a session. `--resume NAME` reports an error when that
+exits without starting a session. The picker and the resume banner are
+interface chrome and are written to stderr, so stdout carries only conversation
+output. `--resume NAME` reports an error when that
 session does not exist instead of opening an empty one. Malformed or torn JSONL
 lines are skipped with a warning instead of making the session unresumable.
 Resuming restores the model recorded in the session (switching provider profile
 when that model belongs to another one); if the model is no longer configured,
-the current model is used with a warning. The MVP slash commands are
+the current model is used with a warning. A resumed conversation is replayed
+into the terminal main buffer before the prompt appears, so previous turns are
+visible without opening the transcript overlay; the replay follows the active
+branch and starts with the newest compaction summary. Replay is skipped when
+stdout is redirected, can be forced with `--replay`, and disabled with
+`--no-replay`. The MVP slash commands are
 `/branches`, `/switch <branch-or-hash>`,
 `/checkpoint <name>`, and `/exit`.
 

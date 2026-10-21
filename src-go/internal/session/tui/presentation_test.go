@@ -5,7 +5,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -111,5 +113,52 @@ func TestPresentationWithoutColorEmitsNoANSI(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "\x1b[") {
 		t.Fatalf("colorless presentation emitted ANSI: %q", out.String())
+	}
+}
+
+func TestPresentationWriteHistoryReplaysResumedTurns(t *testing.T) {
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	user, err := model.NewMessage("", "user", "previous question", now)
+	if err != nil {
+		t.Fatalf("create user message: %v", err)
+	}
+	assistant, err := model.NewMessage(user.ID, "assistant", "previous answer", now)
+	if err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+	checkpoint, err := model.NewCheckpoint(assistant.ID, "main", assistant.ID, now)
+	if err != nil {
+		t.Fatalf("create checkpoint: %v", err)
+	}
+	compaction, err := model.NewCompaction(assistant.ID, model.CompactionData{
+		Summary:          "earlier summary",
+		FirstKeptEntryID: user.ID,
+		TokensBefore:     1234,
+	}, now)
+	if err != nil {
+		t.Fatalf("create compaction: %v", err)
+	}
+
+	var out bytes.Buffer
+	presentation := NewPresentation(&out, false)
+	if err := presentation.WriteHistory([]model.Entry{compaction, user, assistant, checkpoint}); err != nil {
+		t.Fatalf("WriteHistory returned error: %v", err)
+	}
+
+	want := "\u2500\u2500 earlier context compacted \u2500\u2500\nearlier summary\n\n" +
+		"You \u203a\nprevious question\n\nAssistant \u203a\nprevious answer\n\n"
+	if got := out.String(); got != want {
+		t.Fatalf("replayed history = %q, want %q", got, want)
+	}
+}
+
+func TestPresentationWriteHistoryIgnoresEmptyHistory(t *testing.T) {
+	var out bytes.Buffer
+	presentation := NewPresentation(&out, false)
+	if err := presentation.WriteHistory(nil); err != nil {
+		t.Fatalf("WriteHistory returned error: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("empty history rendered output %q", out.String())
 	}
 }

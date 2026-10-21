@@ -218,6 +218,78 @@ func TestRunnerResumeNamedLoadsExistingSession(t *testing.T) {
 	if deps.started.HeadID != existing.ID {
 		t.Fatalf("expected resumed head %q, got %q", existing.ID, deps.started.HeadID)
 	}
+	if deps.replRequest.ReplayHistory {
+		t.Fatal("non-terminal stdout should not replay history by default")
+	}
+}
+
+func TestRunnerResumeReplaySelection(t *testing.T) {
+	terminal, peer, err := pty.Open()
+	if err != nil {
+		t.Fatalf("open PTY: %v", err)
+	}
+	defer terminal.Close()
+	defer peer.Close()
+
+	cases := []struct {
+		name    string
+		options Options
+		tty     bool
+		want    bool
+	}{
+		{name: "tty resume replays", options: Options{Mode: ModeResumeNamed, Name: "work"}, tty: true, want: true},
+		{name: "tty continue replays", options: Options{Mode: ModeContinue}, tty: true, want: true},
+		{name: "piped stdout stays clean", options: Options{Mode: ModeResumeNamed, Name: "work"}, want: false},
+		{name: "no-replay wins over tty", options: Options{Mode: ModeResumeNamed, Name: "work", Replay: ReplayOff}, tty: true, want: false},
+		{name: "replay forces piped stdout", options: Options{Mode: ModeResumeNamed, Name: "work", Replay: ReplayOn}, want: true},
+		{name: "fresh sessions never replay", options: Options{Mode: ModeFresh, Replay: ReplayOn}, tty: true, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := fakeRunnerDeps(t)
+			deps.store.entries = []model.Entry{mustRunnerMessage(t, "", "user", "hello")}
+			if tc.tty {
+				deps.Stdout = peer
+			} else {
+				deps.Stdout = io.Discard
+			}
+
+			if err := NewRunner(deps.RunnerDeps).Run(tc.options); err != nil {
+				t.Fatalf("Run returned error: %v", err)
+			}
+			if deps.replRequest.ReplayHistory != tc.want {
+				t.Fatalf("ReplayHistory = %v, want %v", deps.replRequest.ReplayHistory, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunREPLSessionReplaysHistoryIntoStdout(t *testing.T) {
+	user := mustRunnerMessage(t, "", "user", "previous question")
+	assistant := mustRunnerMessage(t, user.ID, "assistant", "previous answer")
+	var out bytes.Buffer
+	d := RunnerDeps{
+		Stdin:  bytes.NewBufferString("/exit\n"),
+		Stdout: &out,
+		Stderr: io.Discard,
+	}
+	req := StartREPLRequest{
+		Name:          "test-session",
+		State:         graph.NewState([]model.Entry{user, assistant}),
+		Store:         &fakeSessionStore{},
+		Model:         &fakeProviderModel{model: "test-model"},
+		Config:        config.AppConfig{DefaultModel: "test-model"},
+		ReplayHistory: true,
+	}
+
+	if err := runREPLSession(req, d); err != nil {
+		t.Fatalf("runREPLSession returned error: %v", err)
+	}
+	for _, want := range []string{"You \u203a\nprevious question\n\nAssistant \u203a\nprevious answer\n\n"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("replayed output %q missing %q", out.String(), want)
+		}
+	}
 }
 
 func TestRunnerResumeMissingNamedSessionReportsError(t *testing.T) {
@@ -410,8 +482,9 @@ func TestDefaultResumePickerSelectsByNumber(t *testing.T) {
 		return []SessionSummary{{Name: "alpha"}, {Name: "beta"}}, nil
 	}
 	deps.Stdin = strings.NewReader("2\n")
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	deps.Stdout = &out
+	deps.Stderr = &errOut
 
 	if err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -420,9 +493,12 @@ func TestDefaultResumePickerSelectsByNumber(t *testing.T) {
 		t.Fatalf("expected opened beta, got %q", deps.openedName)
 	}
 	for _, want := range []string{"1. alpha\n", "2. beta\n", "Resume which session? [1-2, name, Enter to cancel]: "} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("picker output %q missing %q", out.String(), want)
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("picker output %q missing %q", errOut.String(), want)
 		}
+	}
+	if out.Len() != 0 {
+		t.Fatalf("picker polluted stdout: %q", out.String())
 	}
 }
 
@@ -435,8 +511,9 @@ func TestDefaultResumePickerSelectsByNameAndTitle(t *testing.T) {
 		deps.PickSessionFunc = nil
 		deps.ListSessionsFunc = func() ([]SessionSummary, error) { return summaries, nil }
 		deps.Stdin = strings.NewReader(choice)
-		var out bytes.Buffer
+		var out, errOut bytes.Buffer
 		deps.Stdout = &out
+		deps.Stderr = &errOut
 
 		want := "work-file"
 		if choice == "plain" {
@@ -448,11 +525,14 @@ func TestDefaultResumePickerSelectsByNameAndTitle(t *testing.T) {
 		if deps.openedName != want {
 			t.Fatalf("choice %q opened %q, want %q", choice, deps.openedName, want)
 		}
-		if !strings.Contains(out.String(), "1. Work title (work-file)\n") {
-			t.Fatalf("picker output %q did not label title and name", out.String())
+		if !strings.Contains(errOut.String(), "1. Work title (work-file)\n") {
+			t.Fatalf("picker output %q did not label title and name", errOut.String())
 		}
-		if strings.Contains(out.String(), "2. plain (plain)") {
-			t.Fatalf("picker duplicated a session name: %q", out.String())
+		if strings.Contains(errOut.String(), "2. plain (plain)") {
+			t.Fatalf("picker duplicated a session name: %q", errOut.String())
+		}
+		if out.Len() != 0 {
+			t.Fatalf("picker polluted stdout: %q", out.String())
 		}
 	}
 }
@@ -466,8 +546,9 @@ func TestDefaultResumePickerRepromptsOnInvalidSelection(t *testing.T) {
 		return []SessionSummary{{Name: "alpha"}, {Name: "beta"}}, nil
 	}
 	deps.Stdin = strings.NewReader("9\nmissing\n2\n")
-	var out bytes.Buffer
-	deps.Stdout = &out
+	var errOut bytes.Buffer
+	deps.Stdout = io.Discard
+	deps.Stderr = &errOut
 
 	if err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -476,8 +557,8 @@ func TestDefaultResumePickerRepromptsOnInvalidSelection(t *testing.T) {
 		t.Fatalf("expected opened beta, got %q", deps.openedName)
 	}
 	for _, want := range []string{"No session 9", "No session named \"missing\""} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("picker output %q missing %q", out.String(), want)
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("picker output %q missing %q", errOut.String(), want)
 		}
 	}
 }
@@ -591,6 +672,7 @@ type runnerDepsProbe struct {
 	store          *fakeSessionStore
 	openedName     string
 	started        *graph.State
+	replRequest    StartREPLRequest
 	providerModel  string
 	providerConfig config.AppConfig
 }
@@ -611,6 +693,7 @@ func fakeRunnerDeps(t *testing.T) *runnerDepsProbe {
 		},
 		StartREPLFunc: func(req StartREPLRequest) error {
 			probe.started = req.State
+			probe.replRequest = req
 			return nil
 		},
 		Stderr:         io.Discard,
