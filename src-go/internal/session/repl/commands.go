@@ -17,6 +17,7 @@ const (
 	CommandBranches   CommandKind = "branches"
 	CommandSwitch     CommandKind = "switch"
 	CommandCheckpoint CommandKind = "checkpoint"
+	CommandResume     CommandKind = "resume"
 	CommandTranscript CommandKind = "transcript"
 	CommandUnknown    CommandKind = "unknown"
 )
@@ -27,6 +28,7 @@ const (
 	ActionContinue   Action = "continue"
 	ActionChat       Action = "chat"
 	ActionExit       Action = "exit"
+	ActionResume     Action = "resume"
 	ActionTranscript Action = "transcript"
 )
 
@@ -93,6 +95,8 @@ func ExecuteCommandWithStore(state *graph.State, command Command, out io.Writer,
 		}
 		fmt.Fprintf(out, "checkpoint %s -> %s\n", command.Arg, state.HeadID)
 		return ActionContinue, nil
+	case CommandResume:
+		return ActionResume, nil
 	case CommandTranscript:
 		return ActionTranscript, nil
 	case CommandUnknown:

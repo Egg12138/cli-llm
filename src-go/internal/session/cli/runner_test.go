@@ -232,17 +232,18 @@ func TestRunnerResumeReplaySelection(t *testing.T) {
 	defer peer.Close()
 
 	cases := []struct {
-		name    string
-		options Options
-		tty     bool
-		want    bool
+		name       string
+		options    Options
+		tty        bool
+		want       bool
+		wantResume bool
 	}{
-		{name: "tty resume replays", options: Options{Mode: ModeResumeNamed, Name: "work"}, tty: true, want: true},
-		{name: "tty continue replays", options: Options{Mode: ModeContinue}, tty: true, want: true},
-		{name: "piped stdout stays clean", options: Options{Mode: ModeResumeNamed, Name: "work"}, want: false},
-		{name: "no-replay wins over tty", options: Options{Mode: ModeResumeNamed, Name: "work", Replay: ReplayOff}, tty: true, want: false},
-		{name: "replay forces piped stdout", options: Options{Mode: ModeResumeNamed, Name: "work", Replay: ReplayOn}, want: true},
-		{name: "fresh sessions never replay", options: Options{Mode: ModeFresh, Replay: ReplayOn}, tty: true, want: false},
+		{name: "tty resume replays", options: Options{Mode: ModeResumeNamed, Name: "work"}, tty: true, want: true, wantResume: true},
+		{name: "tty continue replays", options: Options{Mode: ModeContinue}, tty: true, want: true, wantResume: true},
+		{name: "piped stdout stays clean", options: Options{Mode: ModeResumeNamed, Name: "work"}},
+		{name: "no-replay wins over tty", options: Options{Mode: ModeResumeNamed, Name: "work", Replay: ReplayOff}, tty: true},
+		{name: "replay forces piped stdout", options: Options{Mode: ModeResumeNamed, Name: "work", Replay: ReplayOn}, want: true, wantResume: true},
+		{name: "fresh sessions never replay", options: Options{Mode: ModeFresh, Replay: ReplayOn}, tty: true, wantResume: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -259,6 +260,9 @@ func TestRunnerResumeReplaySelection(t *testing.T) {
 			}
 			if deps.replRequest.ReplayHistory != tc.want {
 				t.Fatalf("ReplayHistory = %v, want %v", deps.replRequest.ReplayHistory, tc.want)
+			}
+			if deps.replRequest.ReplayOnResume != tc.wantResume {
+				t.Fatalf("ReplayOnResume = %v, want %v", deps.replRequest.ReplayOnResume, tc.wantResume)
 			}
 		})
 	}
@@ -289,6 +293,115 @@ func TestRunREPLSessionReplaysHistoryIntoStdout(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("replayed output %q missing %q", out.String(), want)
 		}
+	}
+}
+
+func TestRunREPLSessionResumesAnotherSession(t *testing.T) {
+	t.Parallel()
+
+	alpha := &fakeSessionStore{entries: []model.Entry{
+		mustRunnerSessionInfo(t, "test-model"),
+		mustRunnerMessage(t, "", "user", "alpha question"),
+	}}
+	betaQuestion := mustRunnerMessage(t, "", "user", "beta question")
+	betaAnswer := mustRunnerMessage(t, betaQuestion.ID, "assistant", "beta answer")
+	beta := &fakeSessionStore{entries: []model.Entry{
+		mustRunnerSessionInfo(t, "test-model"),
+		betaQuestion,
+		betaAnswer,
+	}}
+	stores := map[string]*fakeSessionStore{"alpha": alpha, "beta": beta}
+	alphaCount, betaCount := len(alpha.entries), len(beta.entries)
+
+	var out bytes.Buffer
+	d := RunnerDeps{
+		Config: config.AppConfig{DefaultModel: "test-model"},
+		Stdin:  strings.NewReader("/resume beta\nhello after resume\n/exit\n"),
+		Stdout: &out,
+		Stderr: io.Discard,
+		OpenStoreFunc: func(name string) (SessionStore, error) {
+			return stores[name], nil
+		},
+		NewModelFunc: func(cfg config.AppConfig) (einomodel.BaseChatModel, error) {
+			return &fakeProviderModel{model: cfg.DefaultModel}, nil
+		},
+	}
+	req := StartREPLRequest{
+		Name:           "alpha",
+		State:          graph.NewState(alpha.entries),
+		Store:          alpha,
+		Model:          &fakeProviderModel{model: "test-model"},
+		Config:         config.AppConfig{DefaultModel: "test-model"},
+		ReplayOnResume: true,
+	}
+
+	if err := runREPLSession(req, d); err != nil {
+		t.Fatalf("runREPLSession returned error: %v", err)
+	}
+	for _, want := range []string{"resumed beta (3 entries, model test-model)", "beta question", "beta answer", "hello after resume"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("session output missing %q: %q", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "alpha question") {
+		t.Fatalf("in-session resume replayed the session it left: %q", out.String())
+	}
+	if len(alpha.entries) != alphaCount {
+		t.Fatalf("turn after resume persisted to the old session: %#v", alpha.entries[alphaCount:])
+	}
+	if len(beta.entries) <= betaCount {
+		t.Fatalf("turn after resume was not persisted to the resumed session: %#v", beta.entries)
+	}
+}
+
+func TestRunREPLSessionResumePicker(t *testing.T) {
+	t.Parallel()
+
+	alpha := &fakeSessionStore{}
+	betaQuestion := mustRunnerMessage(t, "", "user", "beta question")
+	beta := &fakeSessionStore{entries: []model.Entry{
+		mustRunnerSessionInfo(t, "test-model"),
+		betaQuestion,
+	}}
+	stores := map[string]*fakeSessionStore{"alpha": alpha, "beta": beta}
+
+	picked := false
+	var out bytes.Buffer
+	d := RunnerDeps{
+		Config: config.AppConfig{DefaultModel: "test-model"},
+		Stdin:  strings.NewReader("/resume\n/exit\n"),
+		Stdout: &out,
+		Stderr: io.Discard,
+		OpenStoreFunc: func(name string) (SessionStore, error) {
+			return stores[name], nil
+		},
+		NewModelFunc: func(cfg config.AppConfig) (einomodel.BaseChatModel, error) {
+			return &fakeProviderModel{model: cfg.DefaultModel}, nil
+		},
+		ListSessionsFunc: func() ([]SessionSummary, error) {
+			return []SessionSummary{{Name: "alpha"}, {Name: "beta"}}, nil
+		},
+		PickSessionFunc: func(summaries []SessionSummary) (string, error) {
+			picked = true
+			return summaries[1].Name, nil
+		},
+	}
+	req := StartREPLRequest{
+		Name:   "alpha",
+		State:  graph.NewState(nil),
+		Store:  alpha,
+		Model:  &fakeProviderModel{model: "test-model"},
+		Config: config.AppConfig{DefaultModel: "test-model"},
+	}
+
+	if err := runREPLSession(req, d); err != nil {
+		t.Fatalf("runREPLSession returned error: %v", err)
+	}
+	if !picked {
+		t.Fatal("/resume without a name did not use the picker")
+	}
+	if !strings.Contains(out.String(), "resumed beta") {
+		t.Fatalf("picker resume did not switch sessions: %q", out.String())
 	}
 }
 

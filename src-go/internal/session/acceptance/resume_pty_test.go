@@ -197,3 +197,56 @@ func readSessionFile(t *testing.T, home, name string) string {
 	}
 	return string(content)
 }
+
+func TestSessionResumeSlashCommandPTY(t *testing.T) {
+	h := newPTYHarnessWith(t, 100, 30, ptyHarnessOptions{
+		args: []string{"--resume", "alpha"},
+		setupHome: func(t *testing.T, home string) {
+			seedResumeSession(t, home, "alpha", "ALPHA_HISTORY", time.Unix(2000, 0))
+			seedResumeSession(t, home, "beta", "BETA_HISTORY", time.Unix(1000, 0))
+		},
+	})
+
+	h.WaitRawSequenceAfter(0, "resumed alpha", "ALPHA_HISTORY", "Enter send")
+
+	resumeStart := len(h.Raw())
+	h.Send("slash-resume", []byte("/resume beta\r"))
+	h.WaitRawSequenceAfter(resumeStart, "resumed beta", "BETA_HISTORY", "Enter send")
+	if strings.Contains(h.Raw()[resumeStart:], "ALPHA_HISTORY") {
+		t.Fatalf("/resume replayed the session it left: %q", h.Raw()[resumeStart:])
+	}
+
+	turnStart := len(h.Raw())
+	h.Send("slash-resume-turn", []byte("after slash resume\r"))
+	h.WaitRawSequenceAfter(turnStart, "after slash resume", "ACK", "Enter send")
+
+	requests := h.mock.Requests()
+	var resumed *mockRequest
+	for i := range requests {
+		if requests[i].Stream {
+			resumed = &requests[i]
+		}
+	}
+	if resumed == nil {
+		t.Fatalf("resumed session made no streaming request: %#v", requests)
+	}
+	context := make([]string, 0, len(resumed.Messages))
+	for _, message := range resumed.Messages {
+		context = append(context, message.Content)
+	}
+	joined := strings.Join(context, "\n")
+	if !strings.Contains(joined, "BETA_HISTORY") {
+		t.Fatalf("provider context missing the resumed session history: %q", joined)
+	}
+	if strings.Contains(joined, "ALPHA_HISTORY") {
+		t.Fatalf("provider context leaked the previous session history: %q", joined)
+	}
+
+	h.Exit()
+	if !strings.Contains(readSessionFile(t, h.home, "beta"), "after slash resume") {
+		t.Fatalf("resumed session did not persist the new turn: %s", readSessionFile(t, h.home, "beta"))
+	}
+	if strings.Contains(readSessionFile(t, h.home, "alpha"), "after slash resume") {
+		t.Fatalf("previous session received the new turn: %s", readSessionFile(t, h.home, "alpha"))
+	}
+}

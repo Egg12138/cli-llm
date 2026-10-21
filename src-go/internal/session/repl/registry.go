@@ -21,6 +21,7 @@ var enabledCommands = []CommandSpec{
 	{Name: "branches", Usage: "/branches", Description: "List session branches", Kind: CommandBranches},
 	{Name: "switch", Usage: "/switch <target>", Description: "Switch to a branch or checkpoint", Kind: CommandSwitch},
 	{Name: "checkpoint", Usage: "/checkpoint <name>", Description: "Label the current position", Kind: CommandCheckpoint},
+	{Name: "resume", Aliases: []string{"r"}, Usage: "/resume [name]", Description: "Resume another session", Kind: CommandResume},
 }
 
 func EnabledCommands() []CommandSpec {

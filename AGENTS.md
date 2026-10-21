@@ -18,8 +18,8 @@ maturity and version numbers:
 | Runtime | Version source | Status |
 |---|---|---|
 | Python | `pyproject.toml` (`0.3.0`) | Primary packaged/supported runtime for the shared CLI surface. |
-| Go/Eino | `src-go/internal/cli/root.go` (`0.5.1`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
-| Go session plugin | `src-go/internal/session/cli/version.go` (`0.5.1`) | Bundled Go-only plugin installed as `llm-session`. |
+| Go/Eino | `src-go/internal/cli/root.go` (`0.6.0`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
+| Go session plugin | `src-go/internal/session/cli/version.go` (`0.6.0`) | Bundled Go-only plugin installed as `llm-session`. |
 | Rust | `src-rs/Cargo.toml` (`0.1.0`) | Dormant prototype; buildable, but not on an active parity track. |
 
 Do not assume a single repository-wide version. Update the source of truth for
@@ -185,6 +185,14 @@ types are `message`, `custom:checkpoint`, `custom:session_info`, `compaction`,
 and `branch_summary`. Branches are reconstructed from named checkpoint entries;
 nodes themselves do not have mutable names.
 
+Inside a running session, `/resume NAME` switches to that session and
+`/resume` (alias `/r`) uses the same picker. The switch loads the existing
+history, restores the recorded model, follows the `--replay`/`--no-replay`
+preference for replaying history into the main buffer, and makes later turns
+and commands persist to the newly selected session; a failed or cancelled
+resume leaves the current session active. The `/resume` banner and replayed
+history are conversation output on stdout, while the picker stays on stderr.
+
 The `--resume` picker reads one line at a time from stdin, accepts a 1-based
 index or an exact session name/title, re-prompts on invalid input, and treats an
 empty line or EOF as a clean cancellation (exit 0, no session started). It must
@@ -229,6 +237,7 @@ Enabled slash commands come from one registry shared by help and completion:
 | `/branches` | List branch topology without raw head IDs. |
 | `/switch <target>` | Switch to a branch/hash, or create an unknown branch name. |
 | `/checkpoint <name>` | Persist a named pointer at the current position. |
+| `/resume [name]`, `/r` | Switch to another session mid-run; with no name it uses the resume picker. |
 
 Normal chat stays in the terminal main buffer to preserve native scrollback.
 It renders bold blue `You ›` and bold green `Assistant ›` labels with a
@@ -309,6 +318,22 @@ tests/test_root_installer_targets.sh
 tests/test_installer_smoke.sh
 ```
 
+Startup latency (`llm` and `llm-session`):
+
+```bash
+python scripts/benchmark_startup.py --runs 30 --warmups 5
+python scripts/benchmark_startup.py --ref /path/to/previous-release-bins
+```
+
+The bench talks to a local instant OpenAI-compatible stub, so it is offline and
+deterministic apart from machine noise; `--ref` interleaves two builds and
+fails on a p50 regression above `--max-regression`/`--regression-floor`.
+Because the tool's value is fast Q&A, treat spawn → first token as a
+first-class metric: run the bench before and after changes to config loading,
+prompt/role registries, provider construction, session store/projection,
+compaction, or TUI initialization, and record reference numbers in
+`docs/benchmarks/`.
+
 For terminal behavior, unit snapshots are insufficient. Changes to input,
 streaming, status rows, resizing, cancellation, overlays, branch isolation, or
 terminal restoration require the built-binary PTY/VT suite. Keep failure
@@ -326,7 +351,8 @@ Before finishing a change:
 1. Inspect the touched runtime's actual command/config path; do not copy claims
    from an old plan.
 2. Add or update tests at the layer where behavior is observable.
-3. Run formatting, static checks, and relevant runtime tests.
+3. Run formatting, static checks, and relevant runtime tests. For startup-path
+   changes, also run `scripts/benchmark_startup.py` and compare before/after.
 4. Update user-facing docs and `CHANGELOG.md` when behavior changed.
 5. Report any skipped live/network/TTY validation explicitly.
 

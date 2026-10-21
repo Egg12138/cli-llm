@@ -313,3 +313,78 @@ func TestREPLSlashTranscriptOpensOverlay(t *testing.T) {
 		t.Fatalf("expected overlay to open once for /transcript, got %d", overlay.opens)
 	}
 }
+
+func TestREPLResumeSwitchesStateAndStore(t *testing.T) {
+	t.Parallel()
+
+	firstStore := &fakeCommandStore{}
+	secondState := graph.NewState(nil)
+	secondStore := &fakeCommandStore{}
+	var out bytes.Buffer
+
+	code := Loop(LoopOptions{
+		Reader: &fakeReader{lines: []string{"/resume other", "/checkpoint after-resume", "/exit"}},
+		Chat:   &fakeChatRunner{},
+		State:  graph.NewState(nil),
+		Stdout: &out,
+		Store:  firstStore,
+		Resume: func(arg string) (ResumeResult, error) {
+			if arg != "other" {
+				t.Fatalf("resume arg = %q, want other", arg)
+			}
+			return ResumeResult{State: secondState, Store: secondStore}, nil
+		},
+	})
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if len(firstStore.entries) != 0 {
+		t.Fatalf("commands after resume persisted to the old store: %#v", firstStore.entries)
+	}
+	if len(secondStore.entries) != 1 {
+		t.Fatalf("commands after resume did not persist to the new store: %#v", secondStore.entries)
+	}
+	if _, ok := secondState.Branches["after-resume"]; !ok {
+		t.Fatalf("checkpoint was not applied to the resumed state: %#v", secondState.Branches)
+	}
+}
+
+func TestREPLResumeWithoutHandlerReportsAndContinues(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	code := Loop(LoopOptions{
+		Reader: &fakeReader{lines: []string{"/resume", "hello", "/exit"}},
+		Chat:   &fakeChatRunner{},
+		State:  graph.NewState(nil),
+		Stdout: &out,
+	})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(out.String(), "resume is not available") {
+		t.Fatalf("missing resume availability message: %q", out.String())
+	}
+}
+
+func TestREPLResumeErrorKeepsCurrentSession(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	code := Loop(LoopOptions{
+		Reader: &fakeReader{lines: []string{"/resume missing", "hello", "/exit"}},
+		Chat:   &fakeChatRunner{},
+		State:  graph.NewState(nil),
+		Stdout: &out,
+		Resume: func(string) (ResumeResult, error) {
+			return ResumeResult{}, errors.New("resume missing: session not found")
+		},
+	})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(out.String(), "resume missing: session not found") {
+		t.Fatalf("missing resume error: %q", out.String())
+	}
+}

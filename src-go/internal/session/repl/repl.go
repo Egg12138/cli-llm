@@ -51,6 +51,16 @@ type CommandStore interface {
 	Append(entry model.Entry) error
 }
 
+// ResumeResult reports the session a /resume command switched to. The loop
+// adopts the returned state and store so later commands and the transcript
+// overlay act on the resumed session.
+type ResumeResult struct {
+	State *graph.State
+	Store CommandStore
+}
+
+type ResumeFunc func(arg string) (ResumeResult, error)
+
 type LoopOptions struct {
 	Reader        InputReader
 	Chat          ChatRunner
@@ -61,6 +71,7 @@ type LoopOptions struct {
 	Stderr        io.Writer
 	Overlay       TranscriptOverlay
 	Store         CommandStore
+	Resume        ResumeFunc
 	ReportError   func(error)
 }
 
@@ -77,11 +88,13 @@ func Loop(opts LoopOptions) int {
 	if prompt == "" {
 		prompt = "> "
 	}
+	state := opts.State
+	store := opts.Store
 	for {
 		event := readInputEvent(opts.Reader, prompt)
 		if event.Kind == EventTranscript {
 			if opts.Overlay != nil {
-				if err := opts.Overlay.Open(opts.State, out); err != nil {
+				if err := opts.Overlay.Open(state, out); err != nil {
 					fmt.Fprintln(out, err)
 					return 1
 				}
@@ -104,7 +117,7 @@ func Loop(opts LoopOptions) int {
 		if command.Kind == CommandUnknown {
 			output = out
 		}
-		action, err := ExecuteCommandWithStore(opts.State, command, output, opts.Store)
+		action, err := ExecuteCommandWithStore(state, command, output, store)
 		if err != nil {
 			fmt.Fprintln(out, err)
 			continue
@@ -114,10 +127,26 @@ func Loop(opts LoopOptions) int {
 			return 0
 		case ActionTranscript:
 			if opts.Overlay != nil {
-				if err := opts.Overlay.Open(opts.State, out); err != nil {
+				if err := opts.Overlay.Open(state, out); err != nil {
 					fmt.Fprintln(out, err)
 					return 1
 				}
+			}
+		case ActionResume:
+			if opts.Resume == nil {
+				fmt.Fprintln(out, "resume is not available in this session")
+				continue
+			}
+			result, err := opts.Resume(command.Arg)
+			if err != nil {
+				fmt.Fprintln(out, err)
+				continue
+			}
+			if result.State != nil {
+				state = result.State
+			}
+			if result.Store != nil {
+				store = result.Store
 			}
 		case ActionChat:
 			if opts.Chat == nil {

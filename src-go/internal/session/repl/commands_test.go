@@ -28,6 +28,8 @@ func TestSlashCommands(t *testing.T) {
 		{name: "branches", line: "/branches", wantKind: CommandBranches, wantAction: ActionContinue},
 		{name: "switch", line: "/switch main", wantKind: CommandSwitch, wantAction: ActionContinue},
 		{name: "checkpoint", line: "/checkpoint explore", wantKind: CommandCheckpoint, wantAction: ActionContinue},
+		{name: "resume", line: "/resume work", wantKind: CommandResume, wantAction: ActionResume},
+		{name: "resume alias", line: "/r work", wantKind: CommandResume, wantAction: ActionResume},
 		{name: "unknown", line: "/wat", wantKind: CommandUnknown, wantAction: ActionContinue},
 		{name: "chat", line: "hello", wantKind: CommandChat, wantAction: ActionChat},
 	}

@@ -4,8 +4,8 @@ cli-llm is an internal command-line client for interacting with LLM providers.
 The project currently targets team workflows only; no public release is scheduled yet, but every change must keep the codebase publish-ready.
 
 ## Status
-- **Current train**: `0.5.x – Session Resume & Context Management`
-- **Latest milestone**: `0.5.1` (resume history replay, resume picker on stderr, resume picker/continue, tolerant session loading, durable compaction, model restoration)
+- **Current train**: `0.6.x – In-Session Resume`
+- **Latest milestone**: `0.6.0` (in-session `/resume` switching, on top of resume history replay, resume picker on stderr, resume picker/continue, tolerant session loading, durable compaction, and model restoration)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
@@ -43,6 +43,10 @@ The project currently targets team workflows only; no public release is schedule
   output and stays off when stdout is redirected (0.5.1).
 - The `--resume` picker and resume banner write to stderr so stdout carries only
   conversation output (0.5.1).
+
+### 0.6.x – In-Session Resume ✅
+- `/resume [name]` (alias `/r`) switches to another session without restarting
+  `llm-session`, restoring its model and honoring the replay preference.
 
 > The roadmap is intentionally iterative; adjust milestones as new evidence appears.
 
@@ -120,10 +124,28 @@ the responsibility of the selected build tool and the user's environment.
    - Run unit tests via `pytest`.
    - Run Go parity tests via `cd src-go && go test ./...`.
    - Compare Python/Go output rendering via `python scripts/benchmark_output.py`.
+   - Measure `llm` / `llm-session` startup latency via `python scripts/benchmark_startup.py` (see `docs/benchmarks/`).
 4. **Workflow**
    - Keep feature work scoped to the active roadmap milestone.
 - Update `AGENTS.md` + `CHANGELOG.md` whenever behavior or plans change.
 - Use feature branches for experiments; merge to `main` only after tests pass.
+
+### Startup performance
+
+cli-llm is meant to be a fast lightweight Q&A client, so startup latency is
+part of the product. `scripts/benchmark_startup.py` measures spawn → provider
+request and spawn → first streamed token for `llm chat`, `llm-session --no-tui`,
+and the `llm-session` TUI against a local instant provider, so network latency
+is excluded:
+
+```bash
+python scripts/benchmark_startup.py --runs 30 --warmups 5
+python scripts/benchmark_startup.py --ref /path/to/previous-release-bins
+```
+
+`--ref` interleaves two builds and fails on a p50 regression beyond the
+configured limits. Reference numbers, method, and the current `llm-session`
+regression are in `docs/benchmarks/`.
 
 ## Configuration
 cli-llm resolves configuration in this order: CLI flags > environment variables > `~/.cli-llm/config.toml` > built-in defaults.  
@@ -155,7 +177,6 @@ Select a provider via config, `CLI_LLM_PROVIDER`, or the `--provider` flag. Only
 - `llm provider models [name]` – print the models declared for a profile (defaults to the active provider when omitted). Use `--json` on either command for machine-readable output.
 
 ## Plugin Guide
-
 cli-llm supports cargo-style plugins: any executable named `llm-<name>` on your `PATH` becomes a subcommand.
 
 ### Go session plugin
@@ -195,8 +216,13 @@ into the terminal main buffer before the prompt appears, so previous turns are
 visible without opening the transcript overlay; the replay follows the active
 branch and starts with the newest compaction summary. Replay is skipped when
 stdout is redirected, can be forced with `--replay`, and disabled with
-`--no-replay`. The MVP slash commands are
-`/branches`, `/switch <branch-or-hash>`,
+`--no-replay`.
+
+Use `/resume [name]` (or `/r`) to switch to another session without restarting
+`llm-session`: it loads that session's history, restores its recorded model,
+and follows the same replay preference; with no name it opens the resume
+picker, and cancelling or a failed load leaves the current session running.
+The other slash commands are `/branches`, `/switch <branch-or-hash>`,
 `/checkpoint <name>`, and `/exit`.
 
 Failed requests are retried up to three times without duplicating the user

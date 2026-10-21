@@ -6,6 +6,31 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+### Added
+- `scripts/benchmark_startup.py` measures startup latency for `llm chat`,
+  `llm-session --no-tui`, and the `llm-session` TUI against a local instant
+  OpenAI-compatible stub, so provider/network latency is excluded. It reports
+  min/p50/p95/max, writes JSON baselines, gates on p50 regressions, and
+  supports interleaved A/B comparison of two builds via `--ref`. Reference
+  numbers and method are recorded in `docs/benchmarks/`.
+
+### Known issues
+- `llm-session` first-turn startup is ~40 ms slower than 0.4.5 (p50 61 ms vs
+  21 ms from spawn to provider request on the reference machine) because
+  compaction tokenizes the projected history on every turn, and
+  `tiktoken.GetEncoding` rebuilds the BPE encoder per call. Skipping the
+  token count for empty history restores parity in measurement; see
+  `docs/benchmarks/2026-10-21-startup-baseline.md`.
+
+## [0.6.0] – 2026-10-21
+
+### Added
+- `llm-session` accepts `/resume [name]` (alias `/r`) to switch to another
+  session mid-run. It loads that session's history, restores its recorded
+  model, applies the `--replay`/`--no-replay` preference, and persists later
+  turns and commands to the newly selected session. With no name it reuses the
+  existing resume picker; cancelling leaves the current session active.
+
 ## [0.5.1] – 2026-10-21
 
 ### Added

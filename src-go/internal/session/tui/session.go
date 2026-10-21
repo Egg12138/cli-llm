@@ -201,6 +201,10 @@ func (m SessionModel) dispatch(line string) (tea.Model, tea.Cmd) {
 		// Already in TUI, ignore or show help
 		m.vp.AppendLine("Already in transcript view.")
 
+	case sessionrepl.CommandResume:
+		// Session switching needs the REPL loop's state/store swap.
+		m.vp.AppendLine("/resume is not available in this view.")
+
 	case sessionrepl.CommandBranches:
 		var out strings.Builder
 		if _, err := sessionrepl.ExecuteCommand(m.state, cmd, &out); err != nil {

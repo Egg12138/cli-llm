@@ -23,7 +23,7 @@ func TestRenderCompletionsShowsUsageAndDescriptions(t *testing.T) {
 
 func TestRenderCompletionsNarrowShowsSelectedDescription(t *testing.T) {
 	matches := repl.CompleteCommand("/", 1)
-	view := renderCompletions(matches, 4, 40)
+	view := renderCompletions(matches, 5, 40)
 
 	if !strings.Contains(view, "> /switch <target>") {
 		t.Fatalf("narrow completion view missing selected usage:\n%s", view)

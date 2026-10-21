@@ -48,6 +48,9 @@ type StartREPLRequest struct {
 	Config        config.AppConfig
 	NoTUI         bool
 	ReplayHistory bool
+	// ReplayOnResume controls whether /resume replays the switched-to session's
+	// history into the main buffer, following the same rules as startup replay.
+	ReplayOnResume bool
 }
 
 type RunnerDeps struct {
@@ -83,34 +86,24 @@ func (r SessionRunner) Run(options Options) error {
 		}
 		return err
 	}
-	if options.Mode == ModeResumeNamed {
-		exists, statErr := store.Exists()
-		if statErr != nil {
-			return fmt.Errorf("resume %s: %w", name, statErr)
-		}
-		if !exists {
-			return fmt.Errorf("resume %s: %w", name, ErrSessionNotFound)
-		}
-	}
-	result, err := store.Load()
-	if err != nil {
-		if options.Mode == ModeResumeNamed {
-			return fmt.Errorf("resume %s: %w", name, err)
-		}
-		return err
-	}
-	if len(result.SkippedLines) > 0 {
-		fmt.Fprintf(r.deps.Stderr, "warning: session %s: skipped unreadable line(s) %v\n", name, result.SkippedLines)
-	}
-	state := graph.NewState(result.Entries)
 	chatConfig := r.deps.Config
-	if options.Mode != ModeFresh {
-		if info, ok := sessionruntime.SessionInfoOf(state); ok && info.Model != "" && info.Model != chatConfig.DefaultModel {
-			if resolved, restorable := resolveSessionModel(chatConfig, info.Model); restorable {
-				chatConfig = resolved
-			} else {
-				fmt.Fprintf(r.deps.Stderr, "warning: could not restore model %s; using %s\n", info.Model, chatConfig.DefaultModel)
+	var state *graph.State
+	if options.Mode == ModeFresh {
+		result, loadErr := store.Load()
+		if loadErr != nil {
+			return loadErr
+		}
+		if len(result.SkippedLines) > 0 {
+			fmt.Fprintf(r.deps.Stderr, "warning: session %s: skipped unreadable line(s) %v\n", name, result.SkippedLines)
+		}
+		state = graph.NewState(result.Entries)
+	} else {
+		state, chatConfig, err = loadSessionState(store, chatConfig, name, r.deps.Stderr)
+		if err != nil {
+			if options.Mode == ModeResumeNamed {
+				return fmt.Errorf("resume %s: %w", name, err)
 			}
+			return err
 		}
 	}
 	chatModel, err := r.deps.NewModelFunc(chatConfig)
@@ -121,13 +114,14 @@ func (r SessionRunner) Run(options Options) error {
 		fmt.Fprintf(r.deps.Stderr, "resumed %s (%d entries, model %s)\n", name, len(state.Entries), chatConfig.DefaultModel)
 	}
 	return r.deps.StartREPLFunc(StartREPLRequest{
-		Name:          name,
-		State:         state,
-		Store:         store,
-		Model:         chatModel,
-		Config:        chatConfig,
-		NoTUI:         options.NoTUI,
-		ReplayHistory: r.shouldReplayHistory(options, state),
+		Name:           name,
+		State:          state,
+		Store:          store,
+		Model:          chatModel,
+		Config:         chatConfig,
+		NoTUI:          options.NoTUI,
+		ReplayHistory:  r.shouldReplayHistory(options, state),
+		ReplayOnResume: r.shouldReplayOnResume(options),
 	})
 }
 
@@ -139,6 +133,19 @@ func (r SessionRunner) shouldReplayHistory(options Options, state *graph.State) 
 	if options.Mode == ModeFresh || state == nil || state.HeadID == "" {
 		return false
 	}
+	switch options.Replay {
+	case ReplayOn:
+		return true
+	case ReplayOff:
+		return false
+	}
+	return isTerminalWriter(r.deps.Stdout)
+}
+
+// shouldReplayOnResume applies the same replay preference to sessions switched
+// to with /resume. Unlike startup replay, a fresh session can still replay a
+// session it resumes into.
+func (r SessionRunner) shouldReplayOnResume(options Options) bool {
 	switch options.Replay {
 	case ReplayOn:
 		return true
@@ -328,6 +335,35 @@ func readSessionTitle(path string) string {
 	return ""
 }
 
+// loadSessionState reads an existing session, reporting skipped lines, and
+// restores the model recorded in its session_info entry. The caller decides how
+// to present errors.
+func loadSessionState(store SessionStore, cfg config.AppConfig, name string, stderr io.Writer) (*graph.State, config.AppConfig, error) {
+	exists, err := store.Exists()
+	if err != nil {
+		return nil, cfg, err
+	}
+	if !exists {
+		return nil, cfg, ErrSessionNotFound
+	}
+	result, err := store.Load()
+	if err != nil {
+		return nil, cfg, err
+	}
+	if len(result.SkippedLines) > 0 {
+		fmt.Fprintf(stderr, "warning: session %s: skipped unreadable line(s) %v\n", name, result.SkippedLines)
+	}
+	state := graph.NewState(result.Entries)
+	if info, ok := sessionruntime.SessionInfoOf(state); ok && info.Model != "" && info.Model != cfg.DefaultModel {
+		if resolved, restorable := resolveSessionModel(cfg, info.Model); restorable {
+			cfg = resolved
+		} else {
+			fmt.Fprintf(stderr, "warning: could not restore model %s; using %s\n", info.Model, cfg.DefaultModel)
+		}
+	}
+	return state, cfg, nil
+}
+
 // resolveSessionModel restores a session's recorded model. A model listed by
 // another provider profile also switches the endpoint; when the active profile
 // enumerates its models and the recorded one is absent everywhere, the caller
@@ -487,15 +523,27 @@ func runREPLSession(req StartREPLRequest, d RunnerDeps) error {
 	return runSessionLoop(req, d, newLineReader(d.Stdin))
 }
 
+// activeSession is the mutable session target of the REPL. /resume swaps it so
+// chat turns, title renames, and command persistence follow the new session.
+type activeSession struct {
+	name   string
+	state  *graph.State
+	store  SessionStore
+	model  einomodel.BaseChatModel
+	config config.AppConfig
+}
+
 func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.InputReader) error {
-	sessionName := req.Name
+	active := &activeSession{
+		name:   req.Name,
+		state:  req.State,
+		store:  req.Store,
+		model:  req.Model,
+		config: req.Config,
+	}
 	presentation := sessiontui.NewPresentation(d.Stdout, colorsEnabled(d.Stdout))
 	if req.ReplayHistory {
-		history, err := req.State.ReachableHistory()
-		if err != nil {
-			return err
-		}
-		if err := presentation.WriteHistory(sessionruntime.ProjectHistory(history)); err != nil {
+		if err := replaySessionHistory(presentation, active.state); err != nil {
 			return err
 		}
 	}
@@ -507,26 +555,26 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 		return runChatTurnWithInterrupt(context.Background(), d.Stdin, d.Stderr, func(ctx context.Context) error {
 			err := sessionruntime.RunChatTurn(ctx, sessionruntime.ChatTurnRequest{
 				Input:       input,
-				State:       req.State,
-				Store:       req.Store,
+				State:       active.state,
+				Store:       active.store,
 				Writer:      assistant,
-				Model:       req.Model,
-				TitleModel:  req.Model,
-				SessionName: sessionName,
-				ModelName:   req.Config.DefaultModel,
+				Model:       active.model,
+				TitleModel:  active.model,
+				SessionName: active.name,
+				ModelName:   active.config.DefaultModel,
 				Status:      pickStatusReporter(d.Stderr),
 				Compress:    true,
 				OnTitle: func(result sessionruntime.TitleResult) error {
 					nextName := sessionstore.NameFromTitle(result.Title)
-					if concrete, ok := req.Store.(interface {
+					if concrete, ok := active.store.(interface {
 						AvailableName(string) string
 					}); ok {
 						nextName = concrete.AvailableName(result.Title)
 					}
-					if err := req.Store.Rename(nextName); err != nil {
+					if err := active.store.Rename(nextName); err != nil {
 						return err
 					}
-					sessionName = nextName
+					active.name = nextName
 					return nil
 				},
 			})
@@ -536,15 +584,19 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 			return err
 		})
 	}))
+	resume := func(arg string) (sessionrepl.ResumeResult, error) {
+		return resumeSessionInLoop(d, presentation, active, arg, req.ReplayOnResume)
+	}
 	code := sessionrepl.Loop(sessionrepl.LoopOptions{
 		Reader:        reader,
 		Chat:          runner,
-		State:         req.State,
+		State:         active.state,
 		Prompt:        presentation.UserLabel(),
 		Stdout:        d.Stdout,
 		CommandOutput: presentation.CommandWriter(),
 		Stderr:        d.Stderr,
-		Store:         req.Store,
+		Store:         active.store,
+		Resume:        resume,
 		Overlay:       sessiontui.NewOverlay(),
 		ReportError:   presentation.WriteError,
 	})
@@ -552,6 +604,67 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 		return fmt.Errorf("repl exited with code %d", code)
 	}
 	return nil
+}
+
+// resumeSessionInLoop switches the running REPL to another session. It uses the
+// same single-line picker as startup so interactive stdin is left usable for
+// the next prompt, and it only swaps the active session after the new state and
+// model load successfully.
+func resumeSessionInLoop(d RunnerDeps, presentation sessiontui.Presentation, active *activeSession, arg string, replay bool) (sessionrepl.ResumeResult, error) {
+	if d.OpenStoreFunc == nil || d.NewModelFunc == nil {
+		return sessionrepl.ResumeResult{}, errors.New("resume is not configured in this session")
+	}
+	name := strings.TrimSpace(arg)
+	if name == "" {
+		if d.ListSessionsFunc == nil || d.PickSessionFunc == nil {
+			return sessionrepl.ResumeResult{}, errors.New("resume picker is not configured in this session")
+		}
+		summaries, err := d.ListSessionsFunc()
+		if err != nil {
+			return sessionrepl.ResumeResult{}, err
+		}
+		name, err = d.PickSessionFunc(summaries)
+		if err != nil {
+			if errors.Is(err, errResumeCancelled) {
+				fmt.Fprintln(presentation.CommandWriter(), "resume cancelled")
+				return sessionrepl.ResumeResult{}, nil
+			}
+			return sessionrepl.ResumeResult{}, err
+		}
+	}
+	store, err := d.OpenStoreFunc(name)
+	if err != nil {
+		return sessionrepl.ResumeResult{}, fmt.Errorf("resume %s: %w", name, err)
+	}
+	state, cfg, err := loadSessionState(store, d.Config, name, d.Stderr)
+	if err != nil {
+		return sessionrepl.ResumeResult{}, fmt.Errorf("resume %s: %w", name, err)
+	}
+	model, err := d.NewModelFunc(cfg)
+	if err != nil {
+		return sessionrepl.ResumeResult{}, err
+	}
+
+	fmt.Fprintf(presentation.CommandWriter(), "resumed %s (%d entries, model %s)\n", name, len(state.Entries), cfg.DefaultModel)
+	if replay {
+		if err := replaySessionHistory(presentation, state); err != nil {
+			return sessionrepl.ResumeResult{}, err
+		}
+	}
+	active.name = name
+	active.state = state
+	active.store = store
+	active.model = model
+	active.config = cfg
+	return sessionrepl.ResumeResult{State: state, Store: store}, nil
+}
+
+func replaySessionHistory(presentation sessiontui.Presentation, state *graph.State) error {
+	history, err := state.ReachableHistory()
+	if err != nil {
+		return err
+	}
+	return presentation.WriteHistory(sessionruntime.ProjectHistory(history))
 }
 
 func colorsEnabled(out io.Writer) bool {

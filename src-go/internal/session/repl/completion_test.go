@@ -44,7 +44,7 @@ func TestCompleteCommandReturnsDeterministicCanonicalOrder(t *testing.T) {
 	for i, match := range matches {
 		names[i] = match.Spec.Name
 	}
-	want := []string{"branches", "checkpoint", "exit", "help", "switch", "transcript"}
+	want := []string{"branches", "checkpoint", "exit", "help", "resume", "switch", "transcript"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("command order = %#v, want %#v", names, want)
 	}

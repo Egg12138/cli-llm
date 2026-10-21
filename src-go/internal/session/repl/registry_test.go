@@ -8,8 +8,8 @@ import (
 
 func TestEnabledCommandsAreCompleteAndUnique(t *testing.T) {
 	commands := EnabledCommands()
-	if len(commands) != 6 {
-		t.Fatalf("EnabledCommands returned %d commands, want 6", len(commands))
+	if len(commands) != 7 {
+		t.Fatalf("EnabledCommands returned %d commands, want 7", len(commands))
 	}
 
 	seen := make(map[string]struct{}, len(commands))
