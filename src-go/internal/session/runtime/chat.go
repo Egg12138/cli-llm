@@ -29,6 +29,14 @@ type ChatTurnRequest struct {
 	Now         func() time.Time
 	OnTitle     func(TitleResult) error
 	Status      StatusReporter
+
+	// Compress enables token-budget compaction before a turn. When Summarizer
+	// is nil the chat model is reused for the summary request. ThresholdTokens
+	// and KeepRecentTokens fall back to the token package defaults when zero.
+	Compress         bool
+	Summarizer       einomodel.BaseChatModel
+	ThresholdTokens  int
+	KeepRecentTokens int
 }
 
 // maxChatAttempts includes the initial request. A failed request is retried
@@ -71,6 +79,27 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	if titleResult.Created && req.OnTitle != nil {
 		if err := req.OnTitle(titleResult); err != nil {
 			return err
+		}
+	}
+
+	if req.Compress {
+		summarizer := req.Summarizer
+		if summarizer == nil {
+			summarizer = req.Model
+		}
+		if _, compressErr := MaybeCompress(ctx, CompressionRequest{
+			State:            req.State,
+			Store:            req.Store,
+			Summarizer:       summarizer,
+			ModelName:        req.ModelName,
+			ThresholdTokens:  req.ThresholdTokens,
+			KeepRecentTokens: req.KeepRecentTokens,
+			Now:              now,
+		}); compressErr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Compaction is best-effort; a failed summary must not fail the turn.
 		}
 	}
 

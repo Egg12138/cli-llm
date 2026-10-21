@@ -179,6 +179,12 @@ the error is highlighted and the session returns to the prompt for the next
 request. A failed turn persists the user message but no assistant message or
 checkpoint.
 
+Long sessions are compressed automatically once the reachable history reaches
+about 200k tokens: the model writes a summary and roughly the most recent 20k
+tokens are kept. The summary is an append-only `compaction` entry, applied
+again after a restart, so resumed sessions keep the compact context instead of
+replaying summarized history. A failed summary never fails the chat turn.
+
 Normal session chat writes to the terminal main buffer so regular scrollback
 keeps working. The transcript overlay path uses alternate screen mode and
 restores the terminal when it exits; the current line reader recognizes the

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -396,6 +398,97 @@ func TestChatTurnDoesNotRetryAfterPartialStream(t *testing.T) {
 	}
 	if got := out.String(); got != "half" {
 		t.Fatalf("streamed output = %q, want %q", got, "half")
+	}
+}
+
+func TestChatTurnCompressesBeforePersistingTheUserMessage(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	old := mustRuntimeMessage(t, "", "user", strings.Repeat("old context ", 60), now)
+	recent := mustRuntimeMessage(t, old.ID, "assistant", "recent answer", now)
+	state := graph.NewState([]model.Entry{old, recent})
+	store := &fakeAppendStore{}
+	summarizer := &fakeSummarizer{}
+	chatModel := &fakeChatModel{chunks: []string{"answer"}}
+
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:            "new question",
+		State:            state,
+		Store:            store,
+		Writer:           io.Discard,
+		Model:            chatModel,
+		ModelName:        "gpt-4o-mini",
+		Summarizer:       summarizer,
+		Compress:         true,
+		ThresholdTokens:  1,
+		KeepRecentTokens: 1,
+		Now:              func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("RunChatTurn returned error: %v", err)
+	}
+	if summarizer.calls != 1 {
+		t.Fatalf("summarizer calls = %d, want 1", summarizer.calls)
+	}
+	if len(store.entries) == 0 || store.entries[0].Type != model.EntryTypeCompaction {
+		t.Fatalf("expected compaction before the user message, got %#v", store.entries)
+	}
+	compaction := store.entries[0]
+	user := store.entries[1]
+	if user.Type != model.EntryTypeMessage || user.ParentID != compaction.ID {
+		t.Fatalf("user entry %#v does not extend the compaction %q", user, compaction.ID)
+	}
+	if len(chatModel.inputs) != 1 {
+		t.Fatalf("expected one model input, got %d", len(chatModel.inputs))
+	}
+	var joined strings.Builder
+	for _, message := range chatModel.inputs[0] {
+		joined.WriteString(message.Content)
+		joined.WriteByte('\n')
+	}
+	output := joined.String()
+	for _, want := range []string{"compressed summary", "recent answer", "new question"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("model context missing %q: %s", want, output)
+		}
+	}
+	if strings.Contains(output, "old context old context") {
+		t.Fatalf("model context still contains summarized history")
+	}
+}
+
+func TestChatTurnContinuesWhenCompressionFails(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	old := mustRuntimeMessage(t, "", "user", strings.Repeat("old context ", 60), now)
+	recent := mustRuntimeMessage(t, old.ID, "assistant", "recent answer", now)
+	state := graph.NewState([]model.Entry{old, recent})
+	store := &fakeAppendStore{}
+	summarizer := &fakeSummarizer{err: errors.New("summary failed")}
+
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:            "new question",
+		State:            state,
+		Store:            store,
+		Writer:           io.Discard,
+		Model:            &fakeChatModel{chunks: []string{"answer"}},
+		ModelName:        "gpt-4o-mini",
+		Summarizer:       summarizer,
+		Compress:         true,
+		ThresholdTokens:  1,
+		KeepRecentTokens: 1,
+		Now:              func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("compression failure must not fail the turn: %v", err)
+	}
+	if len(store.entries) == 0 || store.entries[0].Type != model.EntryTypeMessage {
+		t.Fatalf("expected no compaction entry, got %#v", store.entries)
+	}
+	if user := store.entries[0]; user.ParentID != recent.ID {
+		t.Fatalf("user entry parent = %q, want previous head %q", user.ParentID, recent.ID)
 	}
 }
 

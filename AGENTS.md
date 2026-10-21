@@ -193,6 +193,12 @@ resumes the first entry. A named resume of a missing file fails instead of
 starting an empty session, and unreadable JSONL lines are skipped with a
 warning that reports their line numbers.
 
+Before a turn, history at or above the compression threshold is summarized; the
+`compaction` entry is appended at the current leaf and becomes the new head, so
+reloading the file keeps it on the branch path. Projection at read time emits
+the summary followed by the entries after `firstKeptEntryId`, while the
+summarized entries remain in the JSONL. A failed summary does not fail the turn.
+
 Every successful chat turn persists the user message, streamed assistant
 message, an automatic checkpoint, and the current branch pointer. The first
 turn uses the configured model for a short title request and renames the
@@ -241,8 +247,9 @@ the selected dialog with OSC 52. The production runner uses
 Be precise about these; types or unit tests alone do not make a feature
 end-to-end complete.
 
-- Compression primitives and the 200k/20k token constants exist and have unit
-  tests, but `MaybeCompress` is not wired into `RunChatTurn`.
+- Compaction is wired into `RunChatTurn` with the 200k/20k default token
+  thresholds. Thresholds are not configurable yet, and the transcript overlay
+  still renders raw history rather than the projected context.
 - `branch_summary` is modeled and accepted by context construction, but no
   production switch path creates branch summaries.
 - Session navigation uses the local `graph.State` parent-chain model. It is not

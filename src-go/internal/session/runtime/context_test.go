@@ -123,6 +123,80 @@ func TestBuildContextIncludesReachableSummaries(t *testing.T) {
 	}
 }
 
+func TestBuildContextProjectsCompactionOnReloadedHistory(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	oldUser := mustRuntimeMessage(t, "", "user", "old question", now)
+	oldAnswer := mustRuntimeMessage(t, oldUser.ID, "assistant", "old answer", now)
+	recentUser := mustRuntimeMessage(t, oldAnswer.ID, "user", "recent question", now)
+	recentAnswer := mustRuntimeMessage(t, recentUser.ID, "assistant", "recent answer", now)
+	compaction, err := model.NewCompaction(recentAnswer.ID, model.CompactionData{
+		Summary:          "old summary",
+		FirstKeptEntryID: recentUser.ID,
+		TokensBefore:     42,
+	}, now)
+	if err != nil {
+		t.Fatalf("NewCompaction returned error: %v", err)
+	}
+	newer := mustRuntimeMessage(t, compaction.ID, "user", "newer question", now)
+	state := graph.NewState([]model.Entry{oldUser, oldAnswer, recentUser, recentAnswer, compaction, newer})
+	state.HeadID = newer.ID
+
+	messages, err := BuildMessages(*state, ContextOptions{})
+	if err != nil {
+		t.Fatalf("BuildMessages returned error: %v", err)
+	}
+	var joined strings.Builder
+	for _, message := range messages {
+		joined.WriteString(message.Content)
+		joined.WriteByte('\n')
+	}
+	output := joined.String()
+	for _, want := range []string{"old summary", "recent question", "recent answer", "newer question"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("context missing %q: %s", want, output)
+		}
+	}
+	if strings.Contains(output, "old question") || strings.Contains(output, "old answer") {
+		t.Fatalf("context still contains summarized history: %s", output)
+	}
+}
+
+func TestBuildContextKeepsNewerHistoryWhenKeptEntryIsMissing(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	old := mustRuntimeMessage(t, "", "user", "old question", now)
+	compaction, err := model.NewCompaction(old.ID, model.CompactionData{
+		Summary:          "old summary",
+		FirstKeptEntryID: "missing",
+	}, now)
+	if err != nil {
+		t.Fatalf("NewCompaction returned error: %v", err)
+	}
+	newer := mustRuntimeMessage(t, compaction.ID, "user", "newer question", now)
+	state := graph.NewState([]model.Entry{old, compaction, newer})
+	state.HeadID = newer.ID
+
+	messages, err := BuildMessages(*state, ContextOptions{})
+	if err != nil {
+		t.Fatalf("BuildMessages returned error: %v", err)
+	}
+	var joined strings.Builder
+	for _, message := range messages {
+		joined.WriteString(message.Content)
+		joined.WriteByte('\n')
+	}
+	output := joined.String()
+	if !strings.Contains(output, "old summary") || !strings.Contains(output, "newer question") {
+		t.Fatalf("context did not keep the summary and newer history: %s", output)
+	}
+	if strings.Contains(output, "old question") {
+		t.Fatalf("context still contains summarized history: %s", output)
+	}
+}
+
 func mustRuntimeMessage(t *testing.T, parentID, role, content string, now time.Time) model.Entry {
 	t.Helper()
 	entry, err := model.NewMessage(parentID, role, content, now)

@@ -1,8 +1,8 @@
 # llm-session resume hardening — plan
 
-Status: PR A implemented; PR B (model restore only) and PR C pending.
-Baseline includes the `--resume` picker fix (`cli.pickSession`, byte-wise
-`readPickerLine`).
+Status: PR A and PR C implemented; PR B is limited to model restoration and is
+still pending. Baseline includes the `--resume` picker fix (`cli.pickSession`,
+byte-wise `readPickerLine`).
 Input: subagent review comparing `src-go/internal/session` with pi's resume
 model (JSONL header, leaf→root projection, compaction projection, session
 picker, model restore, cwd/fork handling). Claims below were re-checked
@@ -70,7 +70,7 @@ live config (`cli/runner.go:94`). Resuming silently changes models.
 Fix: resolve the recorded model through `AppConfig.Providers`, fall back to the
 configured model with a one-line notice. Effort S–M, risk low.
 
-### 6. Compaction is unwired and would not survive reload
+### 6. Compaction is unwired and would not survive reload (done)
 
 `MaybeCompress` has no production caller. It appends `compaction` with
 `parentId ""` and reparents `firstKeptEntryId` only in memory
@@ -126,8 +126,12 @@ context-semantics changes.
 branch and effective model/role with fallback notice. Tests: graph reload
 round-trip on a non-`main` branch; runner model mismatch fallback.
 
-**PR C — compaction projection (gap 6).** Persisted projection plus token
-budget and reload tests. Rewrites what `BuildMessages` emits; keep separate.
+**PR C — compaction projection (gap 6) — implemented.** `MaybeCompress` is
+wired into `RunChatTurn`, appends the compaction at the current leaf (so it
+stays on the reloaded branch path), selects the kept window by token budget,
+and `projectHistory` replaces summarized history at read time. Failure is
+best-effort. Tests cover the leaf/parent chain, budget selection, reload
+projection, missing kept entries, and turn behavior on summary failure.
 
 ## Corrections to the subagent report
 

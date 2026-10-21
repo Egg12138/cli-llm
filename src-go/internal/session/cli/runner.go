@@ -431,6 +431,7 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 				SessionName: sessionName,
 				ModelName:   req.Config.DefaultModel,
 				Status:      pickStatusReporter(d.Stderr),
+				Compress:    true,
 				OnTitle: func(result sessionruntime.TitleResult) error {
 					nextName := sessionstore.NameFromTitle(result.Title)
 					if concrete, ok := req.Store.(interface {

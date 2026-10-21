@@ -18,7 +18,7 @@ func BuildMessages(state graph.State, opts ContextOptions) ([]*schema.Message, e
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range history {
+	for _, entry := range projectHistory(history) {
 		switch entry.Type {
 		case model.EntryTypeMessage:
 			data, err := entry.MessageData()
@@ -48,6 +48,51 @@ func BuildMessages(state graph.State, opts ContextOptions) ([]*schema.Message, e
 		}
 	}
 	return messages, nil
+}
+
+// projectHistory applies the newest compaction on the path. The summary is
+// placed first, followed by the entries after firstKeptEntryId; everything
+// older (including earlier compactions) is dropped from the model context but
+// remains in the append-only file.
+func projectHistory(history []model.Entry) []model.Entry {
+	last := -1
+	for i, entry := range history {
+		if entry.Type == model.EntryTypeCompaction {
+			last = i
+		}
+	}
+	if last < 0 {
+		return history
+	}
+	data, err := history[last].CompactionData()
+	if err != nil {
+		return history[last:]
+	}
+	start := -1
+	for i := 0; i < len(history); i++ {
+		if i == last {
+			continue
+		}
+		if history[i].ID == data.FirstKeptEntryID {
+			start = i
+			break
+		}
+	}
+	projected := make([]model.Entry, 0, len(history))
+	projected = append(projected, history[last])
+	startIndex := start
+	if startIndex < 0 {
+		// A missing kept entry degrades to "summary + newer history" instead of
+		// dropping the conversation that followed the compaction.
+		startIndex = last + 1
+	}
+	for i := startIndex; i < len(history); i++ {
+		if history[i].Type == model.EntryTypeCompaction {
+			continue
+		}
+		projected = append(projected, history[i])
+	}
+	return projected
 }
 
 func systemPrompt(opts ContextOptions) string {

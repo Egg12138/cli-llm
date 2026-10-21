@@ -7,6 +7,10 @@ Until then, entries describe internal milestones so the team can track progress.
 ## [Unreleased]
 
 ### Added
+- `llm-session` compacts long conversations before a turn: at the 200k-token
+  threshold the model writes a summary and about the most recent 20k tokens are
+  kept. Same-turn requests still stream normally, and a failed summary leaves
+  the turn intact.
 - `llm-session --continue` / `-c` resumes the most recently modified session,
   and `-r` is an alias for `--resume`.
 
@@ -15,6 +19,10 @@ Until then, entries describe internal milestones so the team can track progress.
   titles instead of only filename stems.
 
 ### Fixed
+- Compaction is now durable: the summary is appended at the current leaf so it
+  stays on the branch path after a restart, and context projection replaces the
+  summarized history with the summary instead of dropping the summary or
+  replaying the full history. Re-compaction keeps only the newest summary.
 - `llm-session --resume NAME` now reports a missing session instead of silently
   starting an empty one.
 - Session loading skips malformed or torn JSONL lines (and lines above the old
