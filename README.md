@@ -5,7 +5,7 @@ The project currently targets team workflows only; no public release is schedule
 
 ## Status
 - **Current train**: `0.6.x – In-Session Resume`
-- **Latest milestone**: `0.6.0` (in-session `/resume` switching, on top of resume history replay, resume picker on stderr, resume picker/continue, tolerant session loading, durable compaction, and model restoration)
+- **Latest milestone**: `0.6.1` (startup latency for `llm-session` back to 0.4.5 levels, plus the startup benchmark harness and benchmark guidance; on top of in-session `/resume` switching, resume history replay, and model restoration)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
@@ -130,22 +130,98 @@ the responsibility of the selected build tool and the user's environment.
 - Update `AGENTS.md` + `CHANGELOG.md` whenever behavior or plans change.
 - Use feature branches for experiments; merge to `main` only after tests pass.
 
-### Startup performance
+- Use feature branches for experiments; merge to `main` only after tests pass.
 
-cli-llm is meant to be a fast lightweight Q&A client, so startup latency is
-part of the product. `scripts/benchmark_startup.py` measures spawn → provider
-request and spawn → first streamed token for `llm chat`, `llm-session --no-tui`,
-and the `llm-session` TUI against a local instant provider, so network latency
-is excluded:
+## Benchmarks
+
+Three benchmarks guard different parts of the tool. None of them need network
+access or a live provider, and all of them are safe to run repeatedly.
+
+| bench | question | command |
+|---|---|---|
+| startup (`scripts/benchmark_startup.py`) | how long until the first token? | see below |
+| output (`scripts/benchmark_output.py`) | how fast is markdown rendered (Python vs Go)? | `python scripts/benchmark_output.py` |
+| Go micro (`go test -bench`) | did a hot function regress? | `cd src-go && go test ./... -run '^$' -bench .` |
+
+### Startup latency
+
+This is the benchmark that matters most for daily use: cli-llm is a fast,
+lightweight Q&A client, so spawn → first token is a product feature. It builds
+`llm` and `llm-session` (or takes `--llm` / `--llm-session` paths), starts an
+in-process OpenAI-compatible stub that answers instantly, and times each run
+from process spawn:
+
+- `llm --version`, `llm inspect`, `llm session --version` — binary/runtime
+  floor, config load, and plugin dispatch.
+- `llm chat` — spawn → provider request, spawn → first streamed text, spawn →
+  exit.
+- `llm-session --no-tui` and the `llm-session` TUI (on a real PTY) — the same
+  plus first terminal paint and editor-ready.
+
+Because the provider is local and instant, the numbers are local startup
+overhead only. A change that routes work into startup shows up here even when
+unit tests still pass.
 
 ```bash
+# Human table (12 runs / 3 warmups by default)
+python scripts/benchmark_startup.py
+
+# Release-quality numbers
 python scripts/benchmark_startup.py --runs 30 --warmups 5
+
+# A/B two builds, alternating run by run
 python scripts/benchmark_startup.py --ref /path/to/previous-release-bins
+
+# Store a baseline, then gate on it
+python scripts/benchmark_startup.py --json /tmp/startup.json
+python scripts/benchmark_startup.py --baseline /tmp/startup.json
 ```
 
-`--ref` interleaves two builds and fails on a p50 regression beyond the
-configured limits. Reference numbers, method, and the current `llm-session`
-regression are in `docs/benchmarks/`.
+How to read it:
+
+- **p50** is the typical wait; **p95** is the tail users notice; **min** is the
+  floor for this machine. Compare p50s, not single runs.
+- Differences below ~2 ms are noise on a laptop; the regression gate defaults
+  to “worse by more than 20% **and** more than 3 ms” for that reason.
+- `--ref` interleaves the two builds so thermal/background drift hits both
+  equally. Prefer it over running the same bench twice.
+- The TUI numbers include terminal startup; `editor-ready` is the point where
+  typing is accepted, `request` where the model call actually starts.
+
+Rules for a trustworthy result:
+
+- Run on the same machine, with warm page cache (the warmup runs handle this),
+  and close other heavy work.
+- Never benchmark against a live provider: network latency dominates and hides
+  local regressions.
+- Rebuild both sides from known commits; `--ref` takes a directory containing
+  `llm` and `llm-session`.
+- Record the machine, commit, and raw JSON when a number is used in a
+  changelog or review. Reference numbers live in `docs/benchmarks/`.
+
+When to run it: any change to config loading, prompt/role registries, provider
+construction, session store/projection, compaction, or TUI initialization — and
+before cutting a release.
+
+### Go micro-benchmarks
+
+For hot code inside a package, use Go benchmarks with `b.Loop()` and
+`b.ReportAllocs()`:
+
+```bash
+cd src-go
+# Session startup path: tokenizer guard, encoder reuse, compaction check
+go test ./internal/session/token ./internal/session/runtime \
+  -run '^$' -bench . -benchtime 200x
+
+# Everything else
+go test ./... -run '^$' -bench .
+```
+
+Use `-count` and `benchstat` when comparing, and treat allocation counts as
+the signal: a startup-path helper that allocates or builds a tokenizer shows up
+immediately. Benchmarks are not assertions — combine them with the startup
+bench for end-to-end evidence.
 
 ## Configuration
 cli-llm resolves configuration in this order: CLI flags > environment variables > `~/.cli-llm/config.toml` > built-in defaults.  

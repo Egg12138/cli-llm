@@ -96,23 +96,43 @@ rebuilds a ~100k-entry decoder map. Measured in isolation:
 Because the check runs before the user message is appended, a brand-new session
 with empty history still pays the full encoding build before the first request.
 
-### Measured effect of skipping the empty history
+### Fix (landed in 0.6.1)
 
-A three-line guard (`if strings.TrimSpace(text) == "" { return false, nil }`
-before `CountText`) restores parity in an A/B run of 20 runs / 4 warmups:
+Two changes, both in the session runtime:
 
-| metric | 0.4.5 p50 | 0.5.0 + guard p50 | Δ vs 0.4.5 |
-|---|---:|---:|---:|
-| `session.request` | 21.8 | 21.3 | −2.2% |
-| `session.first-token` | 26.6 | 26.3 | −1.1% |
-| `session.tui.request` | 42.7 | 42.4 | −0.8% |
-| `session.tui.first-token` | 47.8 | 47.6 | −0.5% |
+1. **Byte-length guard.** Every BPE token encodes at least one byte, so
+   `tokens <= len(text)`. `token.NeedsCompression` now returns immediately when
+   `len(text) < threshold`, which is exact (no false negatives) and covers every
+   history below the threshold. Since the post-compaction window is ~20k tokens
+   (~80 KB of text), normal sessions never build the tokenizer.
+2. **Encoder reuse.** `token.getEncoder` builds the cl100k encoder once per
+   process with `sync.Once`; the old code rebuilt `CoreBPE` on every
+   `CountText`, which made `firstKeptEntry`'s per-message loop the dominant cost
+   of a compaction turn (`regexp2` guards execution with `muRun`, so sharing the
+   encoder is safe).
 
-The guard is not in the `0.5.0` release; this document records the regression
-and the verified fix measurement so the change can land with its own tests. The
-same per-call `CoreBPE` rebuild also affects every compaction check on long
-histories, so caching the encoder (or tokenizing only up to the threshold) is
-the follow-up.
+After the fix, measured with the same harness (20 runs / 4 warmups):
+
+| metric | 0.4.5 p50 | 0.5.0 p50 | 0.6.1 p50 | vs 0.5.0 | vs 0.4.5 |
+|---|---:|---:|---:|---:|---:|
+| `session.request` | 22.7 | 62.8 | 20.9 | −66.7% | −8% |
+| `session.first-token` | 27.3 | 67.2 | 25.6 | −61.9% | −6% |
+| `session.tui.request` | 43.3 | 83.5 | 41.4 | −50.4% | −4% |
+| `session.tui.first-token` | 48.2 | 88.1 | 46.5 | −47.2% | −4% |
+
+Micro-benchmarks (`go test ./internal/session/{token,runtime} -bench .`):
+
+| benchmark | result |
+|---|---|
+| `BenchmarkNeedsCompressionShortHistory` | 2.1 ns/op, 0 allocs/op |
+| `BenchmarkCountText` (warm process) | 1.4 µs/op |
+| `BenchmarkMaybeCompressShortHistory` | ~6 µs/op, 8.6 KB/op |
+| `MaybeCompress`, 900 KB history, compaction turn | 967 ms → 130 ms |
+
+Deliberately not done: reducing the per-turn cost for histories above the byte
+threshold (~19 ms per 100 KB, ~123 ms per 800 KB of `Encode`). Long-running
+sessions are outside this tool's target use, so they stay exact rather than
+estimated; revisit only if long sessions become common.
 
 `llm-session --resume` replay is another startup path (resumed history is
 re-rendered before the prompt); it is not covered by the scenarios above yet.

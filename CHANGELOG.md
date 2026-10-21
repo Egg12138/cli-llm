@@ -6,21 +6,31 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+## [0.6.1] – 2026-10-21
+
 ### Added
 - `scripts/benchmark_startup.py` measures startup latency for `llm chat`,
   `llm-session --no-tui`, and the `llm-session` TUI against a local instant
   OpenAI-compatible stub, so provider/network latency is excluded. It reports
   min/p50/p95/max, writes JSON baselines, gates on p50 regressions, and
-  supports interleaved A/B comparison of two builds via `--ref`. Reference
-  numbers and method are recorded in `docs/benchmarks/`.
+  supports interleaved A/B comparison of two builds via `--ref`.
+- `README.md` documents the benchmark policy and workflow (startup, output
+  rendering, Go micro-benchmarks); reference numbers and method live in
+  `docs/benchmarks/`.
+- Go benchmarks cover the session startup path: `BenchmarkCountText`,
+  `BenchmarkNeedsCompressionShortHistory`, and
+  `BenchmarkMaybeCompressShortHistory`.
 
-### Known issues
-- `llm-session` first-turn startup is ~40 ms slower than 0.4.5 (p50 61 ms vs
-  21 ms from spawn to provider request on the reference machine) because
-  compaction tokenizes the projected history on every turn, and
-  `tiktoken.GetEncoding` rebuilds the BPE encoder per call. Skipping the
-  token count for empty history restores parity in measurement; see
-  `docs/benchmarks/2026-10-21-startup-baseline.md`.
+### Fixed
+- `llm-session` startup latency is back to 0.4.5 levels. The compaction check
+  no longer builds the tokenizer for ordinary sessions: every BPE token covers
+  at least one byte, so histories shorter than the token threshold are skipped
+  without tokenization (`token.NeedsCompression`). On the reference machine,
+  spawn → provider request went from p50 61 ms (0.5.0) to 21 ms (0.4.5: 21 ms),
+  and the TUI from 85 ms to 41 ms.
+- The cl100k encoder is built once per process instead of on every
+  `CountText` call (tiktoken-go rebuilds `CoreBPE` each call, ~25–45 ms).
+  Compaction turns dropped from ~0.97 s to ~0.13 s in the micro-benchmark.
 
 ## [0.6.0] – 2026-10-21
 
