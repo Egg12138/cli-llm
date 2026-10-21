@@ -162,7 +162,9 @@ llm session --resume work
 ```
 
 Sessions are stored as append-only JSONL files in
-`~/.cli-llm/sessions/<name>.jsonl`. The MVP slash commands are `/branches`,
+`~/.cli-llm/sessions/<name>.jsonl`. With no name, `--resume` prints a numbered
+list and prompts for a number or exact name; an empty line (or EOF) cancels and
+exits without starting a session. The MVP slash commands are `/branches`,
 `/switch <branch-or-hash>`, `/checkpoint <name>`, and `/exit`.
 
 Failed requests are retried up to three times without duplicating the user

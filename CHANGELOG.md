@@ -6,6 +6,13 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+### Fixed
+- `llm-session --resume` now waits for a selection instead of silently resuming
+  the first listed session, so typed input such as a session number no longer
+  becomes a chat message. The picker accepts a 1-based number or an exact
+  name/title, re-prompts on invalid input, and exits cleanly on an empty line or
+  EOF. Runner errors such as a missing named session are now reported on stderr.
+
 ## [0.4.5] – 2026-10-21
 
 ### Fixed

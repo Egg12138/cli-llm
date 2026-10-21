@@ -171,7 +171,7 @@ Launch modes:
 
 ```bash
 llm-session                   # fresh temporary name; first turn auto-titles and renames
-llm-session --resume          # list/pick an existing session
+llm-session --resume          # list sessions, then select by number or exact name
 llm-session --resume NAME     # resume by filename stem
 llm-session --no-tui          # line-oriented input path
 llm session ...               # same plugin through root dispatch
@@ -181,6 +181,12 @@ Entry IDs are immutable SHA-256-derived 12-character hashes. Implemented entry
 types are `message`, `custom:checkpoint`, `custom:session_info`, `compaction`,
 and `branch_summary`. Branches are reconstructed from named checkpoint entries;
 nodes themselves do not have mutable names.
+
+The `--resume` picker reads one line at a time from stdin, accepts a 1-based
+index or an exact session name/title, re-prompts on invalid input, and treats an
+empty line or EOF as a clean cancellation (exit 0, no session started). It must
+not consume input beyond that single line, because the session editor reads the
+same stdin immediately afterwards.
 
 Every successful chat turn persists the user message, streamed assistant
 message, an automatic checkpoint, and the current branch pointer. The first

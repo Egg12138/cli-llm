@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -73,6 +74,7 @@ func Parse(args []string) (Options, error) {
 func Run(args []string, runner Runner) int {
 	options, err := Parse(args)
 	if err != nil {
+		fmt.Fprintln(commandStderr, err)
 		return 2
 	}
 	if options.Mode == ModeHelp {
@@ -84,6 +86,10 @@ func Run(args []string, runner Runner) int {
 		return 0
 	}
 	if err := runner.Run(options); err != nil {
+		if errors.Is(err, errResumeCancelled) {
+			return 0
+		}
+		fmt.Fprintln(commandStderr, err)
 		return 1
 	}
 	return 0

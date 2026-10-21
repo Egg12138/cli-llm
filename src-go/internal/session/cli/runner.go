@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -156,17 +157,7 @@ func (d RunnerDeps) withDefaults() RunnerDeps {
 	}
 	if d.PickSessionFunc == nil {
 		d.PickSessionFunc = func(summaries []SessionSummary) (string, error) {
-			if len(summaries) == 0 {
-				return "", fmt.Errorf("no sessions found")
-			}
-			for i, summary := range summaries {
-				label := summary.Title
-				if label == "" {
-					label = summary.Name
-				}
-				fmt.Fprintf(d.Stdout, "%d. %s (%s)\n", i+1, label, summary.Name)
-			}
-			return summaries[0].Name, nil
+			return pickSession(d.Stdout, d.Stdin, summaries)
 		}
 	}
 	if d.StartREPLFunc == nil {
@@ -241,6 +232,75 @@ func defaultListSessions() ([]SessionSummary, error) {
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
 	return summaries, nil
+}
+
+// errResumeCancelled reports that the user dismissed the resume picker; callers
+// treat it as a clean exit rather than a failure.
+var errResumeCancelled = errors.New("resume cancelled")
+
+func pickSession(out io.Writer, in io.Reader, summaries []SessionSummary) (string, error) {
+	if len(summaries) == 0 {
+		return "", fmt.Errorf("no sessions found")
+	}
+	for i, summary := range summaries {
+		if summary.Title != "" && summary.Title != summary.Name {
+			fmt.Fprintf(out, "%d. %s (%s)\n", i+1, summary.Title, summary.Name)
+			continue
+		}
+		fmt.Fprintf(out, "%d. %s\n", i+1, summary.Name)
+	}
+	for {
+		fmt.Fprintf(out, "Resume which session? [1-%d, name, Enter to cancel]: ", len(summaries))
+		line, err := readPickerLine(in)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return "", errResumeCancelled
+			}
+			return "", err
+		}
+		choice := strings.TrimSpace(line)
+		if choice == "" {
+			return "", errResumeCancelled
+		}
+		if index, convErr := strconv.Atoi(choice); convErr == nil {
+			if index >= 1 && index <= len(summaries) {
+				return summaries[index-1].Name, nil
+			}
+			fmt.Fprintf(out, "No session %d; choose a number between 1 and %d.\n", index, len(summaries))
+			continue
+		}
+		for _, summary := range summaries {
+			if choice == summary.Name || (summary.Title != "" && choice == summary.Title) {
+				return summary.Name, nil
+			}
+		}
+		fmt.Fprintf(out, "No session named %q; choose a number or an exact name.\n", choice)
+	}
+}
+
+// readPickerLine reads one line without over-reading stdin, so an interactive
+// terminal is left untouched for the session editor that starts afterwards.
+func readPickerLine(in io.Reader) (string, error) {
+	var line strings.Builder
+	buf := make([]byte, 1)
+	for {
+		n, err := in.Read(buf)
+		if n > 0 {
+			switch buf[0] {
+			case '\n':
+				return line.String(), nil
+			case '\r':
+			default:
+				line.WriteByte(buf[0])
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && line.Len() > 0 {
+				return line.String(), nil
+			}
+			return "", err
+		}
+	}
 }
 
 type chatRunnerFunc func(string) error

@@ -38,7 +38,16 @@ type ptyHarness struct {
 	waitDone  chan error
 }
 
+type ptyHarnessOptions struct {
+	args      []string
+	setupHome func(t *testing.T, home string)
+}
+
 func newPTYHarness(t *testing.T, width, height int) *ptyHarness {
+	return newPTYHarnessWith(t, width, height, ptyHarnessOptions{})
+}
+
+func newPTYHarnessWith(t *testing.T, width, height int, options ptyHarnessOptions) *ptyHarness {
 	t.Helper()
 	root := sessionModuleRoot(t)
 	buildDir := t.TempDir()
@@ -51,8 +60,11 @@ func newPTYHarness(t *testing.T, width, height int) *ptyHarness {
 	}
 
 	home := t.TempDir()
+	if options.setupHome != nil {
+		options.setupHome(t, home)
+	}
 	mock := newMockOpenAI()
-	command := exec.Command(binary)
+	command := exec.Command(binary, options.args...)
 	command.Dir = root
 	command.Env = replaceEnvironment(os.Environ(), map[string]string{
 		"HOME":            home,

@@ -237,6 +237,123 @@ func TestRunnerResumePickerUsesSelectedSession(t *testing.T) {
 	}
 }
 
+func TestDefaultResumePickerSelectsByNumber(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.PickSessionFunc = nil
+	deps.ListSessionsFunc = func() ([]SessionSummary, error) {
+		return []SessionSummary{{Name: "alpha"}, {Name: "beta"}}, nil
+	}
+	deps.Stdin = strings.NewReader("2\n")
+	var out bytes.Buffer
+	deps.Stdout = &out
+
+	if err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if deps.openedName != "beta" {
+		t.Fatalf("expected opened beta, got %q", deps.openedName)
+	}
+	for _, want := range []string{"1. alpha\n", "2. beta\n", "Resume which session? [1-2, name, Enter to cancel]: "} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("picker output %q missing %q", out.String(), want)
+		}
+	}
+}
+
+func TestDefaultResumePickerSelectsByNameAndTitle(t *testing.T) {
+	t.Parallel()
+
+	summaries := []SessionSummary{{Name: "work-file", Title: "Work title"}, {Name: "plain"}}
+	for _, choice := range []string{"work-file\n", "Work title\n", "plain"} {
+		deps := fakeRunnerDeps(t)
+		deps.PickSessionFunc = nil
+		deps.ListSessionsFunc = func() ([]SessionSummary, error) { return summaries, nil }
+		deps.Stdin = strings.NewReader(choice)
+		var out bytes.Buffer
+		deps.Stdout = &out
+
+		want := "work-file"
+		if choice == "plain" {
+			want = "plain"
+		}
+		if err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker}); err != nil {
+			t.Fatalf("choice %q returned error: %v", choice, err)
+		}
+		if deps.openedName != want {
+			t.Fatalf("choice %q opened %q, want %q", choice, deps.openedName, want)
+		}
+		if !strings.Contains(out.String(), "1. Work title (work-file)\n") {
+			t.Fatalf("picker output %q did not label title and name", out.String())
+		}
+		if strings.Contains(out.String(), "2. plain (plain)") {
+			t.Fatalf("picker duplicated a session name: %q", out.String())
+		}
+	}
+}
+
+func TestDefaultResumePickerRepromptsOnInvalidSelection(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.PickSessionFunc = nil
+	deps.ListSessionsFunc = func() ([]SessionSummary, error) {
+		return []SessionSummary{{Name: "alpha"}, {Name: "beta"}}, nil
+	}
+	deps.Stdin = strings.NewReader("9\nmissing\n2\n")
+	var out bytes.Buffer
+	deps.Stdout = &out
+
+	if err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if deps.openedName != "beta" {
+		t.Fatalf("expected opened beta, got %q", deps.openedName)
+	}
+	for _, want := range []string{"No session 9", "No session named \"missing\""} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("picker output %q missing %q", out.String(), want)
+		}
+	}
+}
+
+func TestDefaultResumePickerCancelsOnEmptyInputOrEOF(t *testing.T) {
+	t.Parallel()
+
+	for _, stdin := range []string{"\n", ""} {
+		deps := fakeRunnerDeps(t)
+		deps.PickSessionFunc = nil
+		deps.ListSessionsFunc = func() ([]SessionSummary, error) {
+			return []SessionSummary{{Name: "alpha"}}, nil
+		}
+		deps.Stdin = strings.NewReader(stdin)
+		deps.Stdout = io.Discard
+
+		err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker})
+		if !errors.Is(err, errResumeCancelled) {
+			t.Fatalf("stdin %q returned %v, want errResumeCancelled", stdin, err)
+		}
+		if deps.openedName != "" {
+			t.Fatalf("stdin %q opened %q before cancelling", stdin, deps.openedName)
+		}
+	}
+}
+
+func TestDefaultResumePickerRequiresSessions(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.PickSessionFunc = nil
+	deps.ListSessionsFunc = func() ([]SessionSummary, error) { return nil, nil }
+	deps.Stdout = io.Discard
+
+	err := NewRunner(deps.RunnerDeps).Run(Options{Mode: ModeResumePicker})
+	if err == nil || !strings.Contains(err.Error(), "no sessions found") {
+		t.Fatalf("expected no-sessions error, got %v", err)
+	}
+}
+
 func TestRunnerProviderFactoryReceivesDefaultModel(t *testing.T) {
 	t.Parallel()
 

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -10,13 +11,14 @@ type fakeRunner struct {
 	mode Mode
 	name string
 	runs int
+	err  error
 }
 
 func (r *fakeRunner) Run(options Options) error {
 	r.mode = options.Mode
 	r.name = options.Name
 	r.runs++
-	return nil
+	return r.err
 }
 
 func TestCommandHelpDoesNotRunRunner(t *testing.T) {
@@ -126,6 +128,12 @@ func TestCommandRejectsInvalidFlags(t *testing.T) {
 	t.Parallel()
 
 	runner := &fakeRunner{}
+	var stderr bytes.Buffer
+	originalStderr := commandStderr
+	commandStderr = &stderr
+	t.Cleanup(func() {
+		commandStderr = originalStderr
+	})
 	code := Run([]string{"--unknown"}, runner)
 
 	if code != 2 {
@@ -133,6 +141,47 @@ func TestCommandRejectsInvalidFlags(t *testing.T) {
 	}
 	if runner.runs != 0 {
 		t.Fatalf("runner should not be called, got %d calls", runner.runs)
+	}
+	if !strings.Contains(stderr.String(), "unknown") {
+		t.Fatalf("expected flag error on stderr, got %q", stderr.String())
+	}
+}
+
+func TestCommandReportsRunnerErrorAndExitsOne(t *testing.T) {
+	runner := &fakeRunner{err: errors.New("resume missing: no such session")}
+	var stderr bytes.Buffer
+	originalStderr := commandStderr
+	commandStderr = &stderr
+	t.Cleanup(func() {
+		commandStderr = originalStderr
+	})
+
+	code := Run([]string{"--resume", "missing"}, runner)
+
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "resume missing") {
+		t.Fatalf("expected resume error on stderr, got %q", stderr.String())
+	}
+}
+
+func TestCommandTreatsCancelledResumeAsCleanExit(t *testing.T) {
+	runner := &fakeRunner{err: errResumeCancelled}
+	var stderr bytes.Buffer
+	originalStderr := commandStderr
+	commandStderr = &stderr
+	t.Cleanup(func() {
+		commandStderr = originalStderr
+	})
+
+	code := Run([]string{"--resume"}, runner)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for a cancelled resume, got %d", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("cancelled resume wrote to stderr: %q", stderr.String())
 	}
 }
 
