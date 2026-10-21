@@ -23,7 +23,7 @@ type ExecutionPlan struct {
 
 // Version is the current Go cli-llm release. Keep it aligned with the bundled
 // session plugin when they ship together.
-const Version = "0.4.5"
+const Version = "0.5.0"
 
 var (
 	builtinSubcommands = []string{"chat", "inspect", "provider", "toolcall"}

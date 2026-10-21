@@ -6,6 +6,8 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+## [0.5.0] – 2026-10-21
+
 ### Added
 - `llm-session` compacts long conversations before a turn: at the 200k-token
   threshold the model writes a summary and about the most recent 20k tokens are

@@ -4,8 +4,8 @@ cli-llm is an internal command-line client for interacting with LLM providers.
 The project currently targets team workflows only; no public release is scheduled yet, but every change must keep the codebase publish-ready.
 
 ## Status
-- **Current train**: `0.4.x – Advanced Provider & Release Prep`
-- **Latest milestone**: `0.4.5` (Go session request retry, highlighted errors, and prompt recovery after failure)
+- **Current train**: `0.5.x – Session Resume & Context Management`
+- **Latest milestone**: `0.5.0` (resume picker/continue, tolerant session loading, durable compaction, model restoration)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
@@ -27,6 +27,16 @@ The project currently targets team workflows only; no public release is schedule
 - Richer output-control pipelines for automation.
 - Extended provider/model metadata + configuration depth.
 - Documentation + release rehearsal; keep interfaces aligned so future Rust work can plug in without rewrites.
+
+### 0.5.x – Session Resume & Context Management ✅
+- `llm-session --resume` picker with titles and recency, `--continue`/`-c`,
+  `-r` alias, and truthful errors for missing sessions.
+- Tolerant JSONL loading: skipped-line diagnostics, no 64 KiB line limit.
+- Durable compaction wired into turns, with projection applied after reload and
+  best-effort summary failures.
+- Resume restores the recorded model, including cross-profile resolution with a
+  warned fallback.
+- Request retry, highlighted errors, and prompt continuation after a failed turn.
 
 > The roadmap is intentionally iterative; adjust milestones as new evidence appears.
 
