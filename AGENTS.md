@@ -18,8 +18,8 @@ maturity and version numbers:
 | Runtime | Version source | Status |
 |---|---|---|
 | Python | `pyproject.toml` (`0.3.0`) | Primary packaged/supported runtime for the shared CLI surface. |
-| Go/Eino | `src-go/internal/cli/root.go` (`0.4.4`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
-| Go session plugin | `src-go/internal/session/cli/version.go` (`0.4.4`) | Bundled Go-only plugin installed as `llm-session`. |
+| Go/Eino | `src-go/internal/cli/root.go` (`0.4.5`) | Active parity runtime, default target of the root installer, and home of `llm-session`. |
+| Go session plugin | `src-go/internal/session/cli/version.go` (`0.4.5`) | Bundled Go-only plugin installed as `llm-session`. |
 | Rust | `src-rs/Cargo.toml` (`0.1.0`) | Dormant prototype; buildable, but not on an active parity track. |
 
 Do not assume a single repository-wide version. Update the source of truth for
@@ -185,7 +185,11 @@ nodes themselves do not have mutable names.
 Every successful chat turn persists the user message, streamed assistant
 message, an automatic checkpoint, and the current branch pointer. The first
 turn uses the configured model for a short title request and renames the
-temporary session file.
+temporary session file. A failed request is retried up to three times without
+re-appending the user message and without persisting a partial assistant
+response; once streaming has started, failures are reported instead of
+retried. After the final failure the error is highlighted and the REPL keeps
+running. A failed turn leaves only the user message in the session file.
 
 Enabled slash commands come from one registry shared by help and completion:
 

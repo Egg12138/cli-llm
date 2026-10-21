@@ -80,6 +80,10 @@ func (m *mockOpenAI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := lastUserMessage(request.Messages)
+	if user == "fail three times" {
+		http.Error(w, "mock failure", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	if flusher, ok := w.(http.Flusher); ok {

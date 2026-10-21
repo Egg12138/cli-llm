@@ -6,6 +6,15 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+## [0.4.5] – 2026-10-21
+
+### Fixed
+- `llm-session` now retries a failed request up to three times without
+  duplicating the user message or persisting a partial assistant response, then
+  highlights the final error and returns to the prompt instead of exiting the
+  session. Requests that fail after streaming has started are not retried
+  because the partial output is already visible.
+
 ## [0.4.4] – 2026-09-20
 
 ### Added

@@ -61,6 +61,7 @@ type LoopOptions struct {
 	Stderr        io.Writer
 	Overlay       TranscriptOverlay
 	Store         CommandStore
+	ReportError   func(error)
 }
 
 func Loop(opts LoopOptions) int {
@@ -124,8 +125,12 @@ func Loop(opts LoopOptions) int {
 				return 1
 			}
 			if err := opts.Chat.RunChat(line); err != nil {
-				fmt.Fprintln(out, err)
-				return 1
+				if opts.ReportError != nil {
+					opts.ReportError(err)
+				} else {
+					fmt.Fprintln(out, err)
+				}
+				continue
 			}
 		}
 	}

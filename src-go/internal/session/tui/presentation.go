@@ -74,6 +74,20 @@ func (p Presentation) CommandWriter() io.Writer {
 	return styledWriter{out: p.out, prefix: "\x1b[2m", suffix: "\x1b[0m"}
 }
 
+// WriteError renders a turn failure without leaving the session; colors are
+// omitted when the presentation is colorless (NO_COLOR or a non-TTY).
+func (p Presentation) WriteError(err error) {
+	message := fmt.Sprintf("Error: %v", err)
+	if !p.color {
+		fmt.Fprintln(p.out, message)
+		return
+	}
+	renderer := lipgloss.NewRenderer(p.out)
+	renderer.SetColorProfile(termenv.ANSI)
+	style := renderer.NewStyle().Bold(true).Foreground(errorColor)
+	fmt.Fprintln(p.out, style.Render(message))
+}
+
 type AssistantWriter struct {
 	out              io.Writer
 	label            string

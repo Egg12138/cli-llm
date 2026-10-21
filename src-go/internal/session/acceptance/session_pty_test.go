@@ -150,6 +150,25 @@ func TestSessionPTY(t *testing.T) {
 	h.Send("stream-cancel-escape", []byte{0x1b})
 	h.WaitRawSequenceAfter(streamCancelStart, "PARTIAL_RESPONSE", "cancelled", "Enter send")
 
+	retryStart := len(h.Raw())
+	h.Send("failing-turn", []byte("fail three times\r"))
+	h.WaitRawSequenceAfter(retryStart, "Error:", "mock failure", "Enter send")
+	retrySegment := h.Raw()[retryStart:]
+	if !strings.Contains(retrySegment, "mError: ") {
+		t.Fatalf("session error was not highlighted: %q", retrySegment)
+	}
+	h.waitUntil(func() bool {
+		attempts := 0
+		for _, user := range h.mock.StreamingUsers() {
+			if user == "fail three times" {
+				attempts++
+			}
+		}
+		return attempts == 3
+	}, "three attempts for the failed request")
+	h.Send("turn-after-failure", []byte("after failure\r"))
+	h.WaitRawSequenceAfter(retryStart, "mock failure", "ACK", "Enter send")
+
 	h.Send("open-transcript", []byte{0x14})
 	h.WaitAltScreen(true)
 	if !strings.Contains(h.Raw(), "\x1b[?1049h") {
@@ -181,7 +200,25 @@ func TestSessionPTY(t *testing.T) {
 	}, "Vim-edited provider input")
 
 	h.Exit()
-	assertPersistedInputs(t, h.home, []string{"你好 世界", "第一行\nsecond line", "resize 保留", "cancel me", "cancel while streaming", "alpha gammaalpha"})
+	assertPersistedInputs(t, h.home, []string{"你好 世界", "第一行\nsecond line", "resize 保留", "cancel me", "cancel while streaming", "fail three times", "after failure", "alpha gammaalpha"})
+	users, assistants := readPersistedMessages(t, h.home)
+	failedTurns := 0
+	for _, user := range users {
+		if user == "fail three times" {
+			failedTurns++
+		}
+	}
+	if failedTurns != 1 {
+		t.Fatalf("retried user message persisted %d times, want once: %#v", failedTurns, users)
+	}
+	if len(assistants) != 5 {
+		t.Fatalf("persisted assistant messages = %#v, want five successful responses", assistants)
+	}
+	for _, assistant := range assistants {
+		if assistant == "" {
+			t.Fatalf("empty assistant message persisted after a failed request: %#v", assistants)
+		}
+	}
 	assertSessionFileOmits(t, h.home, "PARTIAL_RESPONSE")
 }
 
@@ -190,6 +227,23 @@ func containsBrailleSpinner(value string) bool {
 }
 
 func assertPersistedInputs(t *testing.T, home string, expected []string) {
+	t.Helper()
+	users, _ := readPersistedMessages(t, home)
+	for _, want := range expected {
+		found := false
+		for _, got := range users {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("persisted users %#v missing %q", users, want)
+		}
+	}
+}
+
+func readPersistedMessages(t *testing.T, home string) (users, assistants []string) {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join(home, ".cli-llm", "sessions", "*.jsonl"))
 	if err != nil || len(paths) != 1 {
@@ -201,7 +255,6 @@ func assertPersistedInputs(t *testing.T, home string, expected []string) {
 	}
 	defer file.Close()
 
-	var users []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var entry model.Entry
@@ -215,25 +268,17 @@ func assertPersistedInputs(t *testing.T, home string, expected []string) {
 		if err != nil {
 			t.Fatalf("decode message entry: %v", err)
 		}
-		if message.Role == "user" {
+		switch message.Role {
+		case "user":
 			users = append(users, message.Content)
+		case "assistant":
+			assistants = append(assistants, message.Content)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("scan session JSONL: %v", err)
 	}
-	for _, want := range expected {
-		found := false
-		for _, got := range users {
-			if got == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("persisted users %#v missing %q", users, want)
-		}
-	}
+	return users, assistants
 }
 
 func assertSessionFileOmits(t *testing.T, home, forbidden string) {

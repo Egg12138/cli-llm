@@ -24,9 +24,12 @@ func (s *fakeAppendStore) Append(entry model.Entry) error {
 }
 
 type fakeChatModel struct {
-	streamErr error
-	chunks    []string
-	inputs    [][]*schema.Message
+	streamErr     error
+	failCount     int
+	partialChunks []string
+	partialErr    error
+	chunks        []string
+	inputs        [][]*schema.Message
 }
 
 type eventLog struct {
@@ -60,8 +63,19 @@ func (m *fakeChatModel) Generate(ctx context.Context, input []*schema.Message, o
 
 func (m *fakeChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.StreamReader[*schema.Message], error) {
 	m.inputs = append(m.inputs, input)
-	if m.streamErr != nil {
+	if m.streamErr != nil && (m.failCount == 0 || len(m.inputs) <= m.failCount) {
 		return nil, m.streamErr
+	}
+	if m.partialErr != nil {
+		reader, writer := schema.Pipe[*schema.Message](len(m.partialChunks) + 1)
+		go func() {
+			defer writer.Close()
+			for _, chunk := range m.partialChunks {
+				writer.Send(schema.AssistantMessage(chunk, nil), nil)
+			}
+			writer.Send(nil, m.partialErr)
+		}()
+		return reader, nil
 	}
 	messages := make([]*schema.Message, 0, len(m.chunks))
 	for _, chunk := range m.chunks {
@@ -291,8 +305,97 @@ func TestChatTurnFailedModelLeavesNoAssistantOrCheckpoint(t *testing.T) {
 	if len(store.entries) != 1 {
 		t.Fatalf("expected only user entry after failed model, got %#v", store.entries)
 	}
+	if len(chatModel.inputs) != 3 {
+		t.Fatalf("expected three model attempts, got %d", len(chatModel.inputs))
+	}
 	if store.entries[0].Type != model.EntryTypeMessage || mustMessageData(t, store.entries[0]).Role != "user" {
 		t.Fatalf("expected user entry, got %#v", store.entries[0])
+	}
+}
+
+func TestChatTurnRetriesUntilSuccessWithoutDuplicatingUserMessage(t *testing.T) {
+	t.Parallel()
+
+	state := graph.NewState(nil)
+	store := &fakeAppendStore{}
+	chatModel := &fakeChatModel{
+		streamErr: errors.New("transient failure"),
+		failCount: 2,
+		chunks:    []string{"hel", "lo"},
+	}
+	var out bytes.Buffer
+
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:       "say hello",
+		State:       state,
+		Store:       store,
+		Writer:      &out,
+		Model:       chatModel,
+		SessionName: "work",
+		Now:         func() time.Time { return time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("RunChatTurn returned error: %v", err)
+	}
+	if len(chatModel.inputs) != 3 {
+		t.Fatalf("expected two failed attempts plus one success, got %d attempts", len(chatModel.inputs))
+	}
+	if got := out.String(); got != "hello\n" {
+		t.Fatalf("streamed output = %q, want %q", got, "hello\n")
+	}
+
+	var users, assistants int
+	for _, entry := range store.entries {
+		if entry.Type != model.EntryTypeMessage {
+			continue
+		}
+		data := mustMessageData(t, entry)
+		switch data.Role {
+		case "user":
+			users++
+		case "assistant":
+			assistants++
+			if data.Content != "hello" {
+				t.Fatalf("assistant content = %q, want %q", data.Content, "hello")
+			}
+		}
+	}
+	if users != 1 || assistants != 1 {
+		t.Fatalf("expected one user and one assistant entry, got %d user and %d assistant", users, assistants)
+	}
+}
+
+func TestChatTurnDoesNotRetryAfterPartialStream(t *testing.T) {
+	t.Parallel()
+
+	state := graph.NewState(nil)
+	store := &fakeAppendStore{}
+	chatModel := &fakeChatModel{
+		partialChunks: []string{"half"},
+		partialErr:    errors.New("stream dropped"),
+	}
+	var out bytes.Buffer
+
+	err := RunChatTurn(context.Background(), ChatTurnRequest{
+		Input:       "say hello",
+		State:       state,
+		Store:       store,
+		Writer:      &out,
+		Model:       chatModel,
+		SessionName: "work",
+		Now:         func() time.Time { return time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC) },
+	})
+	if err == nil {
+		t.Fatalf("expected partial stream error")
+	}
+	if len(chatModel.inputs) != 1 {
+		t.Fatalf("partially streamed response must not be retried, got %d attempts", len(chatModel.inputs))
+	}
+	if len(store.entries) != 1 || store.entries[0].Type != model.EntryTypeMessage {
+		t.Fatalf("expected only the user entry after partial stream failure, got %#v", store.entries)
+	}
+	if got := out.String(); got != "half" {
+		t.Fatalf("streamed output = %q, want %q", got, "half")
 	}
 }
 

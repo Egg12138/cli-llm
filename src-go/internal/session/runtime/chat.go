@@ -31,6 +31,10 @@ type ChatTurnRequest struct {
 	Status      StatusReporter
 }
 
+// maxChatAttempts includes the initial request. A failed request is retried
+// without appending another copy of the user's message to the session.
+const maxChatAttempts = 3
+
 func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	if req.State == nil {
 		return fmt.Errorf("session state is required")
@@ -88,36 +92,58 @@ func RunChatTurn(ctx context.Context, req ChatTurnRequest) error {
 	if err != nil {
 		return err
 	}
-	stream, err := req.Model.Stream(ctx, messages, req.Options...)
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-	reporter.Set(StatusWaitingStream)
-
-	streamingReported := false
 	var content strings.Builder
-	for {
-		chunk, err := stream.Recv()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
+	streamingReported := false
+	var lastErr error
+	for attempt := 1; attempt <= maxChatAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if chunk == nil || chunk.Content == "" {
-			continue
-		}
-		if !streamingReported {
-			reporter.Set(StatusStreaming)
-			clearStatus()
-			streamingReported = true
-		}
-		content.WriteString(chunk.Content)
-		if req.Writer != nil {
-			if _, err := fmt.Fprint(req.Writer, chunk.Content); err != nil {
-				return err
+		reporter.Set(StatusWaitingStream)
+		lastErr = nil
+		stream, err := req.Model.Stream(ctx, messages, req.Options...)
+		if err != nil {
+			lastErr = err
+		} else {
+			for {
+				chunk, recvErr := stream.Recv()
+				if recvErr != nil {
+					if recvErr != io.EOF {
+						lastErr = recvErr
+					}
+					break
+				}
+				if chunk == nil || chunk.Content == "" {
+					continue
+				}
+				if !streamingReported {
+					reporter.Set(StatusStreaming)
+					clearStatus()
+					streamingReported = true
+				}
+				content.WriteString(chunk.Content)
+				if req.Writer != nil {
+					if _, writeErr := io.WriteString(req.Writer, chunk.Content); writeErr != nil {
+						stream.Close()
+						return writeErr
+					}
+				}
 			}
+			stream.Close()
+		}
+		if lastErr == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if content.Len() > 0 {
+			// Part of the response is already on screen and in the session buffer;
+			// retrying would duplicate it, so report the failure instead.
+			return lastErr
+		}
+		if attempt == maxChatAttempts {
+			return fmt.Errorf("request failed after %d attempts: %w", attempt, lastErr)
 		}
 	}
 	response := content.String()

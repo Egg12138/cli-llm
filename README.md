@@ -5,7 +5,7 @@ The project currently targets team workflows only; no public release is schedule
 
 ## Status
 - **Current train**: `0.4.x – Advanced Provider & Release Prep`
-- **Latest milestone**: `0.4.4` (Go session terminal UX, cancellation, command completion, and installer hardening)
+- **Latest milestone**: `0.4.5` (Go session request retry, highlighted errors, and prompt recovery after failure)
 - **Python** remains the primary supported implementation. `src-go/` now contains an Eino-based parity implementation for evaluation; Rust remains dormant until explicitly scheduled.
 
 ## Roadmap Snapshot
@@ -164,6 +164,13 @@ llm session --resume work
 Sessions are stored as append-only JSONL files in
 `~/.cli-llm/sessions/<name>.jsonl`. The MVP slash commands are `/branches`,
 `/switch <branch-or-hash>`, `/checkpoint <name>`, and `/exit`.
+
+Failed requests are retried up to three times without duplicating the user
+message. A request that fails after part of the response was already streamed is
+not retried, since that partial output is already visible. If all attempts fail,
+the error is highlighted and the session returns to the prompt for the next
+request. A failed turn persists the user message but no assistant message or
+checkpoint.
 
 Normal session chat writes to the terminal main buffer so regular scrollback
 keeps working. The transcript overlay path uses alternate screen mode and

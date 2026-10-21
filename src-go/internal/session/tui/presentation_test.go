@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -73,6 +74,29 @@ func TestPresentationColorsLabelsAndDimsCommandOutput(t *testing.T) {
 	}
 	if got := ansi.Strip(out.String()); got != "Available commands:\n" {
 		t.Fatalf("stripped command output = %q", got)
+	}
+}
+
+func TestPresentationWriteErrorUsesHighlightedError(t *testing.T) {
+	var out bytes.Buffer
+	presentation := NewPresentation(&out, true)
+	presentation.WriteError(errors.New("boom"))
+
+	if !strings.Contains(out.String(), "\x1b[") {
+		t.Fatalf("colored error has no ANSI styling: %q", out.String())
+	}
+	if got := ansi.Strip(out.String()); got != "Error: boom\n" {
+		t.Fatalf("stripped error output = %q, want %q", got, "Error: boom\n")
+	}
+}
+
+func TestPresentationWriteErrorWithoutColorEmitsNoANSI(t *testing.T) {
+	var out bytes.Buffer
+	presentation := NewPresentation(&out, false)
+	presentation.WriteError(errors.New("boom"))
+
+	if got, want := out.String(), "Error: boom\n"; got != want {
+		t.Fatalf("colorless error output = %q, want %q", got, want)
 	}
 }
 

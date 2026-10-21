@@ -335,6 +335,7 @@ func runSessionLoop(req StartREPLRequest, d RunnerDeps, reader sessionrepl.Input
 		Stderr:        d.Stderr,
 		Store:         req.Store,
 		Overlay:       sessiontui.NewOverlay(),
+		ReportError:   presentation.WriteError,
 	})
 	if code != 0 {
 		return fmt.Errorf("repl exited with code %d", code)

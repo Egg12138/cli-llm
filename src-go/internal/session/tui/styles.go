@@ -27,6 +27,7 @@ var (
 	roleUserColor      = lipgloss.AdaptiveColor{Light: "4", Dark: "12"}
 	roleAssistantColor = lipgloss.AdaptiveColor{Light: "2", Dark: "10"}
 	roleSystemColor    = lipgloss.AdaptiveColor{Light: "8", Dark: "7"}
+	errorColor         = lipgloss.AdaptiveColor{Light: "1", Dark: "9"}
 
 	roleStyles = map[string]lipgloss.Style{
 		"user":      lipgloss.NewStyle().Foreground(roleUserColor),

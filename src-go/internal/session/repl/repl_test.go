@@ -202,18 +202,36 @@ func TestREPLInterruptReturns130(t *testing.T) {
 	}
 }
 
-func TestREPLChatErrorReturnsOne(t *testing.T) {
+func TestREPLChatErrorReportsAndContinues(t *testing.T) {
 	t.Parallel()
 
-	chat := chatRunnerFunc(func(string) error { return errors.New("boom") })
+	var reported []error
+	var inputs []string
+	chat := chatRunnerFunc(func(input string) error {
+		inputs = append(inputs, input)
+		if input == "hello" {
+			return errors.New("boom")
+		}
+		return nil
+	})
+	var out bytes.Buffer
 	code := Loop(LoopOptions{
-		Reader: &fakeReader{lines: []string{"hello"}},
+		Reader: &fakeReader{lines: []string{"hello", "next", "/exit"}},
 		Chat:   chat,
 		State:  graph.NewState(nil),
-		Stdout: &bytes.Buffer{},
+		Stdout: &out,
+		ReportError: func(err error) {
+			reported = append(reported, err)
+		},
 	})
-	if code != 1 {
-		t.Fatalf("expected chat error exit code 1, got %d", code)
+	if code != 0 {
+		t.Fatalf("expected chat error to return to the REPL, got exit code %d", code)
+	}
+	if len(reported) != 1 || reported[0].Error() != "boom" {
+		t.Fatalf("reported errors = %#v, want boom", reported)
+	}
+	if len(inputs) != 2 || inputs[0] != "hello" || inputs[1] != "next" {
+		t.Fatalf("chat inputs = %#v, want the turn after the failure to run", inputs)
 	}
 }
 
