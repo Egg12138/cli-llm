@@ -191,7 +191,11 @@ same stdin immediately afterwards. Sessions are listed by modification time
 (most recent first) with their persisted session title, and `--continue`/`-c`
 resumes the first entry. A named resume of a missing file fails instead of
 starting an empty session, and unreadable JSONL lines are skipped with a
-warning that reports their line numbers.
+warning that reports their line numbers. Resume restores the model recorded in
+`custom:session_info`, switching to another provider profile when that profile
+lists the model; an unresolvable model falls back to the configured model with
+a warning. The active branch is still always `main` after a restart (see
+"Known gaps").
 
 Before a turn, history at or above the compression threshold is summarized; the
 `compaction` entry is appended at the current leaf and becomes the new head, so

@@ -1,7 +1,7 @@
 # llm-session resume hardening — plan
 
-Status: PR A and PR C implemented; PR B is limited to model restoration and is
-still pending. Baseline includes the `--resume` picker fix (`cli.pickSession`,
+Status: PR A, PR C, and PR B's model-restoration half are implemented; active
+branch persistence from PR B remains open. Baseline includes the `--resume` picker fix (`cli.pickSession`,
 byte-wise `readPickerLine`).
 Input: subagent review comparing `src-go/internal/session` with pi's resume
 model (JSONL header, leaf→root projection, compaction projection, session
@@ -62,7 +62,7 @@ Fix needs a marker entry. Caution: `NewState` treats every non-named entry as
 a head candidate, and existing files must keep loading. Effort S–M, risk
 medium; strongest candidate for a dedicated PR.
 
-### 5. Model is not restored; `SessionInfo.Model` is write-only
+### 5. Model is not restored; `SessionInfo.Model` is write-only (done)
 
 `SessionInfo.Model` is written at title creation (`runtime/title.go:42`) and
 never read outside tests. `SessionRunner.Run` always builds the model from
@@ -122,9 +122,11 @@ store long/torn/corrupt lines; picker metadata and recency; PTY resume with an
 unreadable trailing line, selection isolation, and cancellation. No
 context-semantics changes.
 
-**PR B — restore where you were (gaps 4–5).** Persist and rebuild the active
-branch and effective model/role with fallback notice. Tests: graph reload
-round-trip on a non-`main` branch; runner model mismatch fallback.
+**PR B — restore where you were (gaps 4–5).** Model restoration implemented:
+resume resolves the recorded model through the configured provider profiles,
+falls back with a warning, and reports the active model in the resume banner.
+Active-branch persistence is still open: it needs a marker entry that
+`NewState` must not treat as a head candidate, plus reload tests.
 
 **PR C — compaction projection (gap 6) — implemented.** `MaybeCompress` is
 wired into `RunChatTurn`, appends the compaction at the current leaf (so it

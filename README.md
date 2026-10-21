@@ -168,8 +168,11 @@ list ordered by most recently used, showing each session's persisted title, and
 prompts for a number or exact name/title; an empty line (or EOF) cancels and
 exits without starting a session. `--resume NAME` reports an error when that
 session does not exist instead of opening an empty one. Malformed or torn JSONL
-lines are skipped with a warning instead of making the session unresumable. The
-MVP slash commands are `/branches`, `/switch <branch-or-hash>`,
+lines are skipped with a warning instead of making the session unresumable.
+Resuming restores the model recorded in the session (switching provider profile
+when that model belongs to another one); if the model is no longer configured,
+the current model is used with a warning. The MVP slash commands are
+`/branches`, `/switch <branch-or-hash>`,
 `/checkpoint <name>`, and `/exit`.
 
 Failed requests are retried up to three times without duplicating the user

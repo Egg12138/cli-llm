@@ -56,6 +56,26 @@ func ensureSessionTitle(ctx context.Context, state *graph.State, store AppendSto
 	return TitleResult{Title: title, Created: true}, nil
 }
 
+// SessionInfoOf returns persisted session metadata, if the history contains a
+// readable custom:session_info entry.
+func SessionInfoOf(state *graph.State) (model.SessionInfo, bool) {
+	if state == nil {
+		return model.SessionInfo{}, false
+	}
+	for _, id := range state.Order {
+		entry, ok := state.Entries[id]
+		if !ok || entry.Type != model.EntryTypeSessionInfo {
+			continue
+		}
+		data, err := entry.SessionInfoData()
+		if err != nil {
+			continue
+		}
+		return data, true
+	}
+	return model.SessionInfo{}, false
+}
+
 func hasSessionInfo(state *graph.State) bool {
 	for _, id := range state.Order {
 		if state.Entries[id].Type == model.EntryTypeSessionInfo {

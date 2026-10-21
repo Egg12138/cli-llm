@@ -13,6 +13,10 @@ Until then, entries describe internal milestones so the team can track progress.
   the turn intact.
 - `llm-session --continue` / `-c` resumes the most recently modified session,
   and `-r` is an alias for `--resume`.
+- Resuming restores the model recorded in the session's `custom:session_info`,
+  including switching to another provider profile that lists it. When the
+  recorded model is no longer configured, the current model is used and a
+  warning is printed.
 
 ### Changed
 - The `--resume` picker lists sessions by recency and shows their persisted

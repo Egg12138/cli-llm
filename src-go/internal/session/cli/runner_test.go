@@ -82,6 +82,16 @@ func mustRunnerMessage(t *testing.T, parentID, role, content string) model.Entry
 	return entry
 }
 
+func mustRunnerSessionInfo(t *testing.T, modelName string) model.Entry {
+	t.Helper()
+	now := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	entry, err := model.NewSessionInfo("", model.SessionInfo{Title: "work", Created: now, Model: modelName}, now)
+	if err != nil {
+		t.Fatalf("NewSessionInfo returned error: %v", err)
+	}
+	return entry
+}
+
 func (s *fakeSessionStore) Load() (sessionstore.LoadResult, error) {
 	if s.missing {
 		return sessionstore.LoadResult{}, errors.New("missing")
@@ -242,10 +252,99 @@ func TestRunnerResumeNamedReportsSkippedLinesAndBanner(t *testing.T) {
 	if err := runner.Run(Options{Mode: ModeResumeNamed, Name: "work"}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	for _, want := range []string{"skipped unreadable line(s) [2 5]", "resumed work (1 entries)"} {
+	for _, want := range []string{"skipped unreadable line(s) [2 5]", "resumed work (1 entries, model gpt-4o-mini)"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("stderr %q missing %q", stderr.String(), want)
 		}
+	}
+}
+
+func TestRunnerResumeRestoresRecordedModel(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.Config.DefaultModel = "configured-model"
+	deps.store.entries = []model.Entry{
+		mustRunnerSessionInfo(t, "session-model"),
+		mustRunnerMessage(t, "", "user", "hello"),
+	}
+	var stderr bytes.Buffer
+	deps.Stderr = &stderr
+	runner := NewRunner(deps.RunnerDeps)
+
+	if err := runner.Run(Options{Mode: ModeResumeNamed, Name: "work"}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if deps.providerModel != "session-model" {
+		t.Fatalf("provider model = %q, want the recorded session model", deps.providerModel)
+	}
+	if deps.started == nil {
+		t.Fatal("expected the REPL to start")
+	}
+	if strings.Contains(stderr.String(), "could not restore") {
+		t.Fatalf("unexpected restore warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "model session-model") {
+		t.Fatalf("resume banner missing the restored model: %q", stderr.String())
+	}
+}
+
+func TestRunnerResumeSwitchesProviderForRecordedModel(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.Config.Provider = "main"
+	deps.Config.APIEndpoint = "https://main.example/v1"
+	deps.Config.DefaultModel = "main-model"
+	deps.Config.Providers = map[string]config.ProviderConfig{
+		"main":  {APIEndpoint: "https://main.example/v1", Models: []string{"main-model"}},
+		"other": {APIEndpoint: "https://other.example/v1", Models: []string{"session-model"}},
+	}
+	deps.store.entries = []model.Entry{
+		mustRunnerSessionInfo(t, "session-model"),
+		mustRunnerMessage(t, "", "user", "hello"),
+	}
+	runner := NewRunner(deps.RunnerDeps)
+
+	if err := runner.Run(Options{Mode: ModeResumeNamed, Name: "work"}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if deps.providerModel != "session-model" {
+		t.Fatalf("provider model = %q, want session-model", deps.providerModel)
+	}
+	if deps.providerConfig.Provider != "other" || deps.providerConfig.APIEndpoint != "https://other.example/v1" {
+		t.Fatalf("provider config = %#v, want the other profile", deps.providerConfig)
+	}
+}
+
+func TestRunnerResumeFallsBackWhenRecordedModelIsGone(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.Config.Provider = "main"
+	deps.Config.DefaultModel = "configured-model"
+	deps.Config.Providers = map[string]config.ProviderConfig{
+		"main": {Models: []string{"configured-model"}},
+	}
+	deps.store.entries = []model.Entry{
+		mustRunnerSessionInfo(t, "removed-model"),
+		mustRunnerMessage(t, "", "user", "hello"),
+	}
+	var stderr bytes.Buffer
+	deps.Stderr = &stderr
+	runner := NewRunner(deps.RunnerDeps)
+
+	if err := runner.Run(Options{Mode: ModeResumeNamed, Name: "work"}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if deps.providerModel != "configured-model" {
+		t.Fatalf("provider model = %q, want the configured fallback", deps.providerModel)
+	}
+	if !strings.Contains(stderr.String(), "could not restore model removed-model") {
+		t.Fatalf("missing restore warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "using configured-model") {
+		t.Fatalf("missing fallback notice: %q", stderr.String())
 	}
 }
 
@@ -489,10 +588,11 @@ func TestRunnerProviderFactoryReceivesDefaultModel(t *testing.T) {
 
 type runnerDepsProbe struct {
 	RunnerDeps
-	store         *fakeSessionStore
-	openedName    string
-	started       *graph.State
-	providerModel string
+	store          *fakeSessionStore
+	openedName     string
+	started        *graph.State
+	providerModel  string
+	providerConfig config.AppConfig
 }
 
 func fakeRunnerDeps(t *testing.T) *runnerDepsProbe {
@@ -506,6 +606,7 @@ func fakeRunnerDeps(t *testing.T) *runnerDepsProbe {
 		},
 		NewModelFunc: func(cfg config.AppConfig) (einomodel.BaseChatModel, error) {
 			probe.providerModel = cfg.DefaultModel
+			probe.providerConfig = cfg
 			return &fakeProviderModel{model: cfg.DefaultModel}, nil
 		},
 		StartREPLFunc: func(req StartREPLRequest) error {

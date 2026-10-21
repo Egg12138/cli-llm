@@ -123,7 +123,7 @@ func TestSessionResumeSkippedLinesPTY(t *testing.T) {
 	})
 
 	h.WaitRawContains("skipped unreadable line(s) [5]")
-	h.WaitRawSequenceAfter(0, "resumed gamma (4 entries)", "Enter send")
+	h.WaitRawSequenceAfter(0, "resumed gamma (4 entries, model mock-model)", "Enter send")
 
 	turnStart := len(h.Raw())
 	h.Send("resumed-turn", []byte("after torn\r"))

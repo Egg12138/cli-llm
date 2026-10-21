@@ -102,19 +102,29 @@ func (r SessionRunner) Run(options Options) error {
 		fmt.Fprintf(r.deps.Stderr, "warning: session %s: skipped unreadable line(s) %v\n", name, result.SkippedLines)
 	}
 	state := graph.NewState(result.Entries)
-	chatModel, err := r.deps.NewModelFunc(r.deps.Config)
+	chatConfig := r.deps.Config
+	if options.Mode != ModeFresh {
+		if info, ok := sessionruntime.SessionInfoOf(state); ok && info.Model != "" && info.Model != chatConfig.DefaultModel {
+			if resolved, restorable := resolveSessionModel(chatConfig, info.Model); restorable {
+				chatConfig = resolved
+			} else {
+				fmt.Fprintf(r.deps.Stderr, "warning: could not restore model %s; using %s\n", info.Model, chatConfig.DefaultModel)
+			}
+		}
+	}
+	chatModel, err := r.deps.NewModelFunc(chatConfig)
 	if err != nil {
 		return err
 	}
 	if options.Mode != ModeFresh {
-		fmt.Fprintf(r.deps.Stderr, "resumed %s (%d entries)\n", name, len(state.Entries))
+		fmt.Fprintf(r.deps.Stderr, "resumed %s (%d entries, model %s)\n", name, len(state.Entries), chatConfig.DefaultModel)
 	}
 	return r.deps.StartREPLFunc(StartREPLRequest{
 		Name:   name,
 		State:  state,
 		Store:  store,
 		Model:  chatModel,
-		Config: r.deps.Config,
+		Config: chatConfig,
 		NoTUI:  options.NoTUI,
 	})
 }
@@ -295,6 +305,50 @@ func readSessionTitle(path string) string {
 		}
 	}
 	return ""
+}
+
+// resolveSessionModel restores a session's recorded model. A model listed by
+// another provider profile also switches the endpoint; when the active profile
+// enumerates its models and the recorded one is absent everywhere, the caller
+// keeps the configured model and warns instead.
+func resolveSessionModel(cfg config.AppConfig, modelName string) (config.AppConfig, bool) {
+	resolved := cfg
+	resolved.DefaultModel = modelName
+	providers := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		providers = append(providers, name)
+	}
+	sort.Strings(providers)
+	for _, name := range providers {
+		if name == cfg.Provider {
+			continue
+		}
+		provider := cfg.Providers[name]
+		if !containsString(provider.Models, modelName) {
+			continue
+		}
+		resolved.Provider = name
+		if provider.APIEndpoint != "" {
+			resolved.APIEndpoint = provider.APIEndpoint
+		}
+		if provider.APIKey != "" {
+			resolved.APIKey = provider.APIKey
+		}
+		return resolved, true
+	}
+	if active, ok := cfg.Providers[cfg.Provider]; ok && len(active.Models) > 0 && !containsString(active.Models, modelName) {
+		return cfg, false
+	}
+	return resolved, true
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // ErrSessionNotFound reports a resume target that does not exist on disk.
