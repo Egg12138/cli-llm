@@ -199,3 +199,33 @@ func TestCompactionProjectionSurvivesReload(t *testing.T) {
 		t.Fatalf("reloaded context still contains summarized history: %s", output)
 	}
 }
+
+// BenchmarkMaybeCompressShortHistory covers the per-turn check on an ordinary
+// session. It must never build the tokenizer, so it stays in the microsecond
+// range; a regression here reintroduces startup latency on every llm-session
+// invocation (see docs/benchmarks/).
+func BenchmarkMaybeCompressShortHistory(b *testing.B) {
+	now := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
+	entries := make([]model.Entry, 0, 6)
+	parent := ""
+	for i := 0; i < 6; i++ {
+		entry, err := model.NewMessage(parent, "user", strings.Repeat("short context ", 10), now)
+		if err != nil {
+			b.Fatalf("NewMessage returned error: %v", err)
+		}
+		entries = append(entries, entry)
+		parent = entry.ID
+	}
+	summarizer := &fakeSummarizer{}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := MaybeCompress(context.Background(), CompressionRequest{
+			State:      graph.NewState(entries),
+			Store:      &fakeAppendStore{},
+			Summarizer: summarizer,
+			ModelName:  "bench-model",
+		}); err != nil {
+			b.Fatalf("MaybeCompress returned error: %v", err)
+		}
+	}
+}
