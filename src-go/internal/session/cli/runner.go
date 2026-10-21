@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,14 +28,16 @@ import (
 )
 
 type SessionStore interface {
-	Load() ([]model.Entry, error)
+	Load() (sessionstore.LoadResult, error)
+	Exists() (bool, error)
 	Rename(name string) error
 	sessionruntime.AppendStore
 }
 
 type SessionSummary struct {
-	Name  string
-	Title string
+	Name     string
+	Title    string
+	Modified time.Time
 }
 
 type StartREPLRequest struct {
@@ -79,17 +82,32 @@ func (r SessionRunner) Run(options Options) error {
 		}
 		return err
 	}
-	entries, err := store.Load()
+	if options.Mode == ModeResumeNamed {
+		exists, statErr := store.Exists()
+		if statErr != nil {
+			return fmt.Errorf("resume %s: %w", name, statErr)
+		}
+		if !exists {
+			return fmt.Errorf("resume %s: %w", name, ErrSessionNotFound)
+		}
+	}
+	result, err := store.Load()
 	if err != nil {
 		if options.Mode == ModeResumeNamed {
 			return fmt.Errorf("resume %s: %w", name, err)
 		}
 		return err
 	}
-	state := graph.NewState(entries)
+	if len(result.SkippedLines) > 0 {
+		fmt.Fprintf(r.deps.Stderr, "warning: session %s: skipped unreadable line(s) %v\n", name, result.SkippedLines)
+	}
+	state := graph.NewState(result.Entries)
 	chatModel, err := r.deps.NewModelFunc(r.deps.Config)
 	if err != nil {
 		return err
+	}
+	if options.Mode != ModeFresh {
+		fmt.Fprintf(r.deps.Stderr, "resumed %s (%d entries)\n", name, len(state.Entries))
 	}
 	return r.deps.StartREPLFunc(StartREPLRequest{
 		Name:   name,
@@ -113,6 +131,15 @@ func (r SessionRunner) resolveName(options Options) (string, error) {
 			return "", err
 		}
 		return r.deps.PickSessionFunc(summaries)
+	case ModeContinue:
+		summaries, err := r.deps.ListSessionsFunc()
+		if err != nil {
+			return "", err
+		}
+		if len(summaries) == 0 {
+			return "", fmt.Errorf("no sessions found")
+		}
+		return summaries[0].Name, nil
 	default:
 		return "", fmt.Errorf("unsupported mode %q", options.Mode)
 	}
@@ -227,12 +254,51 @@ func defaultListSessions() ([]SessionSummary, error) {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
 			continue
 		}
-		name := strings.TrimSuffix(entry.Name(), ".jsonl")
-		summaries = append(summaries, SessionSummary{Name: name})
+		summary := SessionSummary{Name: strings.TrimSuffix(entry.Name(), ".jsonl")}
+		if info, statErr := entry.Info(); statErr == nil {
+			summary.Modified = info.ModTime()
+		}
+		summary.Title = readSessionTitle(filepath.Join(root, entry.Name()))
+		summaries = append(summaries, summary)
 	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
+	sort.Slice(summaries, func(i, j int) bool {
+		if !summaries[i].Modified.Equal(summaries[j].Modified) {
+			return summaries[i].Modified.After(summaries[j].Modified)
+		}
+		return summaries[i].Name < summaries[j].Name
+	})
 	return summaries, nil
 }
+
+// readSessionTitle returns the persisted session title, if the file starts with
+// one. Unreadable files yield no title; the picker still lists them by name.
+func readSessionTitle(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	reader := bufio.NewReaderSize(file, 16*1024)
+	for line := 0; line < 20; line++ {
+		text, readErr := reader.ReadString('\n')
+		if strings.TrimSpace(text) != "" {
+			var entry model.Entry
+			if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &entry); err == nil && entry.Type == model.EntryTypeSessionInfo {
+				if data, dataErr := entry.SessionInfoData(); dataErr == nil {
+					return data.Title
+				}
+				return ""
+			}
+		}
+		if readErr != nil {
+			return ""
+		}
+	}
+	return ""
+}
+
+// ErrSessionNotFound reports a resume target that does not exist on disk.
+var ErrSessionNotFound = errors.New("session not found")
 
 // errResumeCancelled reports that the user dismissed the resume picker; callers
 // treat it as a clean exit rather than a failure.

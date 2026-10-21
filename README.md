@@ -156,16 +156,21 @@ Put the built `llm-session` binary on `PATH` to run either form:
 
 ```bash
 llm-session
-llm-session --resume
+llm-session --resume          # or -r
 llm-session --resume work
+llm-session --continue        # or -c: most recent session
 llm session --resume work
 ```
 
 Sessions are stored as append-only JSONL files in
 `~/.cli-llm/sessions/<name>.jsonl`. With no name, `--resume` prints a numbered
-list and prompts for a number or exact name; an empty line (or EOF) cancels and
-exits without starting a session. The MVP slash commands are `/branches`,
-`/switch <branch-or-hash>`, `/checkpoint <name>`, and `/exit`.
+list ordered by most recently used, showing each session's persisted title, and
+prompts for a number or exact name/title; an empty line (or EOF) cancels and
+exits without starting a session. `--resume NAME` reports an error when that
+session does not exist instead of opening an empty one. Malformed or torn JSONL
+lines are skipped with a warning instead of making the session unresumable. The
+MVP slash commands are `/branches`, `/switch <branch-or-hash>`,
+`/checkpoint <name>`, and `/exit`.
 
 Failed requests are retried up to three times without duplicating the user
 message. A request that fails after part of the response was already streamed is

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,35 +126,61 @@ func (s Store) Append(entry model.Entry) error {
 	return nil
 }
 
-func (s Store) Load() ([]model.Entry, error) {
+// LoadResult is the outcome of reading a session file. SkippedLines lists the
+// 1-based line numbers that were unusable (malformed JSON or no entry ID).
+type LoadResult struct {
+	Entries      []model.Entry
+	SkippedLines []int
+}
+
+func (s Store) Exists() (bool, error) {
+	_, err := os.Stat(s.path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// Load reads every usable entry. Unlike a strict parser it keeps going after a
+// malformed or torn line so a crashed append cannot make the session
+// unresumable, and it has no per-line size limit.
+func (s Store) Load() (LoadResult, error) {
 	file, err := os.Open(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []model.Entry{}, nil
+			return LoadResult{}, nil
 		}
-		return nil, err
+		return LoadResult{}, err
 	}
 	defer file.Close()
 
-	var entries []model.Entry
-	scanner := bufio.NewScanner(file)
+	result := LoadResult{}
+	reader := bufio.NewReaderSize(file, 64*1024)
 	lineNumber := 0
-	for scanner.Scan() {
-		lineNumber++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	for {
+		line, readErr := reader.ReadString('\n')
+		if len(line) > 0 {
+			lineNumber++
+			trimmed := strings.TrimSpace(line)
+			var entry model.Entry
+			if trimmed != "" {
+				if err := json.Unmarshal([]byte(trimmed), &entry); err != nil || entry.ID == "" {
+					result.SkippedLines = append(result.SkippedLines, lineNumber)
+				} else {
+					result.Entries = append(result.Entries, entry)
+				}
+			}
 		}
-		var entry model.Entry
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			return nil, fmt.Errorf("parse %s line %d: %w", s.path, lineNumber, err)
+		if readErr != nil {
+			if readErr == io.EOF {
+				return result, nil
+			}
+			return result, readErr
 		}
-		entries = append(entries, entry)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return entries, nil
 }
 
 func validateName(name string) error {

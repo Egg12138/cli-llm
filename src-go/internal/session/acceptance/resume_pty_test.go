@@ -16,8 +16,8 @@ func TestSessionResumePickerPTY(t *testing.T) {
 	h := newPTYHarnessWith(t, 100, 30, ptyHarnessOptions{
 		args: []string{"--resume"},
 		setupHome: func(t *testing.T, home string) {
-			seedResumeSession(t, home, "alpha", "ALPHA_HISTORY")
-			seedResumeSession(t, home, "beta", "BETA_HISTORY")
+			seedResumeSession(t, home, "alpha", "ALPHA_HISTORY", time.Unix(2000, 0))
+			seedResumeSession(t, home, "beta", "BETA_HISTORY", time.Unix(1000, 0))
 		},
 	})
 
@@ -80,7 +80,7 @@ func TestSessionResumePickerCancelPTY(t *testing.T) {
 	h := newPTYHarnessWith(t, 100, 30, ptyHarnessOptions{
 		args: []string{"--resume"},
 		setupHome: func(t *testing.T, home string) {
-			seedResumeSession(t, home, "alpha", "ALPHA_HISTORY")
+			seedResumeSession(t, home, "alpha", "ALPHA_HISTORY", time.Unix(1000, 0))
 		},
 	})
 
@@ -102,7 +102,40 @@ func TestSessionResumePickerCancelPTY(t *testing.T) {
 	}
 }
 
-func seedResumeSession(t *testing.T, home, name, history string) {
+func TestSessionResumeSkippedLinesPTY(t *testing.T) {
+	h := newPTYHarnessWith(t, 100, 30, ptyHarnessOptions{
+		args: []string{"--resume", "gamma"},
+		setupHome: func(t *testing.T, home string) {
+			seedResumeSession(t, home, "gamma", "GAMMA_HISTORY", time.Unix(5000, 0))
+			path := filepath.Join(home, ".cli-llm", "sessions", "gamma.jsonl")
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+			if err != nil {
+				t.Fatalf("open gamma session: %v", err)
+			}
+			if _, err := file.WriteString("{\"id\":\"torn\"\n"); err != nil {
+				_ = file.Close()
+				t.Fatalf("write torn line: %v", err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatalf("close gamma session: %v", err)
+			}
+		},
+	})
+
+	h.WaitRawContains("skipped unreadable line(s) [5]")
+	h.WaitRawSequenceAfter(0, "resumed gamma (4 entries)", "Enter send")
+
+	turnStart := len(h.Raw())
+	h.Send("resumed-turn", []byte("after torn\r"))
+	h.WaitRawSequenceAfter(turnStart, "after torn", "ACK", "Enter send")
+
+	h.Exit()
+	if !strings.Contains(readSessionFile(t, h.home, "gamma"), "after torn") {
+		t.Fatalf("resumed session did not persist the new turn: %s", readSessionFile(t, h.home, "gamma"))
+	}
+}
+
+func seedResumeSession(t *testing.T, home, name, history string, modified time.Time) {
 	t.Helper()
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	info, err := model.NewSessionInfo("", model.SessionInfo{Title: name, Created: now, Model: "mock-model"}, now)
@@ -135,8 +168,12 @@ func seedResumeSession(t *testing.T, home, name, history string) {
 		content.Write(encoded)
 		content.WriteByte('\n')
 	}
-	if err := os.WriteFile(filepath.Join(dir, name+".jsonl"), content.Bytes(), 0o600); err != nil {
+	path := filepath.Join(dir, name+".jsonl")
+	if err := os.WriteFile(path, content.Bytes(), 0o600); err != nil {
 		t.Fatalf("write session file: %v", err)
+	}
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatalf("set session mtime: %v", err)
 	}
 }
 

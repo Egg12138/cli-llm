@@ -1,7 +1,8 @@
 # llm-session resume hardening — plan
 
-Status: proposal (2026-10-21). Baseline includes the uncommitted
-`--resume` picker fix (`cli.pickSession`, byte-wise `readPickerLine`).
+Status: PR A implemented; PR B (model restore only) and PR C pending.
+Baseline includes the `--resume` picker fix (`cli.pickSession`, byte-wise
+`readPickerLine`).
 Input: subagent review comparing `src-go/internal/session` with pi's resume
 model (JSONL header, leaf→root projection, compaction projection, session
 picker, model restore, cwd/fork handling). Claims below were re-checked
@@ -24,7 +25,7 @@ against the code; two subagent claims are corrected at the end.
 
 ## Highest-value gaps (ranked)
 
-### 1. `--resume NAME` with a typo silently starts an empty session
+### 1. `--resume NAME` with a typo silently starts an empty session (done)
 
 `store.Open` only validates and creates the directory (`store/store.go:29`);
 `Load` returns an empty slice when the file is absent (`store/store.go:128`);
@@ -33,7 +34,7 @@ Impact: user talks to an empty context and a new `<typo>.jsonl` appears.
 Fix: `ErrSessionNotFound` sentinel from the resume path; keep fresh mode as-is.
 Effort S, risk low.
 
-### 2. Loading is all-or-nothing and capped at 64 KiB per line
+### 2. Loading is all-or-nothing and capped at 64 KiB per line (done)
 
 `Load` uses a default `bufio.Scanner`, rejects the first malformed line, and
 surfaces `ErrTooLong` (`store/store.go:139`). `Append` writes an entire
@@ -42,7 +43,7 @@ final line makes a session permanently unresumable.
 Fix: raise the scanner buffer, skip-and-count bad lines with line numbers,
 report skipped lines on resume. Effort S, risk low.
 
-### 3. Picker has no titles, no recency order, no preview
+### 3. Picker has no titles, no recency order, no preview (title/recency done)
 
 `defaultListSessions` only reads directory names and sorts by name
 (`cli/runner.go:216`), so `SessionSummary.Title` is always empty and the title
@@ -86,8 +87,9 @@ risk medium-high; separate PR.
    only (`cli/command.go:39`).
 2. Resume banner: print `resumed <name> · N entries · model M` once
    (`cli/runner.go:349`).
-3. Picker input hardening: treat `\r` as a terminator (currently skipped
-   everywhere) and cap length (`cli/runner.go:283`).
+3. Picker input: `\r` is deliberately skipped so CRLF input cannot leave a
+   stray newline for the editor (a lone CR does not occur in canonical TTY
+   mode); an explicit length cap is still open (`cli/runner.go:283`).
 4. Store hardening: `Append` follows symlinks; `Rename` has a TOCTOU between
    `AvailableName` and `os.Rename` (`store/store.go:50`, `:94`).
 5. Report partially readable sessions (`skipped N lines`) with #2.
@@ -113,11 +115,12 @@ risk medium-high; separate PR.
 
 ## Suggested PR slices
 
-**PR A — truthful resume (gaps 1–3, improvements 1–3, 5).** Not-found sentinel,
-tolerant load with diagnostics, picker metadata/recency, resume banner,
-`--continue`, `\r` handling. Tests: store long/torn/missing line; picker
-metadata; PTY resume with an unreadable trailing line. No context-semantics
-changes.
+**PR A — truthful resume (gaps 1–3, improvements 1–2, 5) — implemented.**
+`ErrSessionNotFound` + `Exists()`, tolerant load with line diagnostics,
+picker titles/recency, resume banner, `--continue`/`-c`, `-r` alias. Tests:
+store long/torn/corrupt lines; picker metadata and recency; PTY resume with an
+unreadable trailing line, selection isolation, and cancellation. No
+context-semantics changes.
 
 **PR B — restore where you were (gaps 4–5).** Persist and rebuild the active
 branch and effective model/role with fallback notice. Tests: graph reload

@@ -20,6 +20,7 @@ const (
 	ModeVersion      Mode = "version"
 	ModeResumePicker Mode = "resume-picker"
 	ModeResumeNamed  Mode = "resume-named"
+	ModeContinue     Mode = "continue"
 )
 
 type Options struct {
@@ -42,6 +43,9 @@ func Parse(args []string) (Options, error) {
 	flags.SetOutput(io.Discard)
 
 	resume := flags.Bool("resume", false, "resume an existing session")
+	resumeShort := flags.Bool("r", false, "resume an existing session (shorthand)")
+	continueLatest := flags.Bool("continue", false, "continue the most recent session")
+	continueShort := flags.Bool("c", false, "continue the most recent session (shorthand)")
 	showVersion := flags.Bool("version", false, "print version and exit")
 	noTUI := flags.Bool("no-tui", false, "disable TUI mode (line-based REPL)")
 	if err := flags.Parse(args); err != nil {
@@ -54,12 +58,24 @@ func Parse(args []string) (Options, error) {
 		return Options{Mode: ModeVersion}, nil
 	}
 
+	resumeMode := *resume || *resumeShort
+	continueMode := *continueLatest || *continueShort
+	if resumeMode && continueMode {
+		return Options{}, fmt.Errorf("--resume and --continue are mutually exclusive")
+	}
+
 	rest := flags.Args()
 	if len(rest) > 1 {
 		return Options{}, fmt.Errorf("expected at most one session name, got %d", len(rest))
 	}
 
-	if !*resume {
+	if continueMode {
+		if len(rest) > 0 {
+			return Options{}, fmt.Errorf("session name requires --resume")
+		}
+		return Options{Mode: ModeContinue, NoTUI: *noTUI}, nil
+	}
+	if !resumeMode {
 		if len(rest) > 0 {
 			return Options{}, fmt.Errorf("session name requires --resume")
 		}
@@ -100,12 +116,13 @@ func printVersion(out io.Writer) {
 }
 
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: llm-session [--resume [NAME]]")
+	fmt.Fprintln(out, "Usage: llm-session [--resume [NAME] | --continue]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Modes:")
 	fmt.Fprintln(out, "  llm-session                 Start a fresh session")
-	fmt.Fprintln(out, "  llm-session --resume        Pick a session to resume")
+	fmt.Fprintln(out, "  llm-session --resume        Pick a session to resume (-r)")
 	fmt.Fprintln(out, "  llm-session --resume NAME   Resume NAME")
+	fmt.Fprintln(out, "  llm-session --continue      Continue the most recent session (-c)")
 	fmt.Fprintln(out, "  llm-session --no-tui         Disable TUI (line-based REPL)")
 }
 

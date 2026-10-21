@@ -172,7 +172,8 @@ Launch modes:
 ```bash
 llm-session                   # fresh temporary name; first turn auto-titles and renames
 llm-session --resume          # list sessions, then select by number or exact name
-llm-session --resume NAME     # resume by filename stem
+llm-session --resume NAME     # resume by filename stem; errors if it is missing
+llm-session --continue        # continue the most recently modified session (-c)
 llm-session --no-tui          # line-oriented input path
 llm session ...               # same plugin through root dispatch
 ```
@@ -186,7 +187,11 @@ The `--resume` picker reads one line at a time from stdin, accepts a 1-based
 index or an exact session name/title, re-prompts on invalid input, and treats an
 empty line or EOF as a clean cancellation (exit 0, no session started). It must
 not consume input beyond that single line, because the session editor reads the
-same stdin immediately afterwards.
+same stdin immediately afterwards. Sessions are listed by modification time
+(most recent first) with their persisted session title, and `--continue`/`-c`
+resumes the first entry. A named resume of a missing file fails instead of
+starting an empty session, and unreadable JSONL lines are skipped with a
+warning that reports their line numbers.
 
 Every successful chat turn persists the user message, streamed assistant
 message, an automatic checkpoint, and the current branch pointer. The first

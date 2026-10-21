@@ -3,8 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"github.com/Egg12138/cli-llm/src-go/internal/config"
 	"github.com/Egg12138/cli-llm/src-go/internal/session/graph"
 	"github.com/Egg12138/cli-llm/src-go/internal/session/model"
+	sessionstore "github.com/Egg12138/cli-llm/src-go/internal/session/store"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/creack/pty"
@@ -64,6 +68,7 @@ func TestRunChatTurnWithInterruptReturnsToTheREPLAfterCancellation(t *testing.T)
 
 type fakeSessionStore struct {
 	entries []model.Entry
+	skipped []int
 	missing bool
 	renamed string
 }
@@ -77,11 +82,15 @@ func mustRunnerMessage(t *testing.T, parentID, role, content string) model.Entry
 	return entry
 }
 
-func (s *fakeSessionStore) Load() ([]model.Entry, error) {
+func (s *fakeSessionStore) Load() (sessionstore.LoadResult, error) {
 	if s.missing {
-		return nil, errors.New("missing")
+		return sessionstore.LoadResult{}, errors.New("missing")
 	}
-	return s.entries, nil
+	return sessionstore.LoadResult{Entries: s.entries, SkippedLines: s.skipped}, nil
+}
+
+func (s *fakeSessionStore) Exists() (bool, error) {
+	return !s.missing, nil
 }
 
 func (s *fakeSessionStore) Append(entry model.Entry) error {
@@ -211,6 +220,62 @@ func TestRunnerResumeMissingNamedSessionReportsError(t *testing.T) {
 	err := runner.Run(Options{Mode: ModeResumeNamed, Name: "missing"})
 	if err == nil || !strings.Contains(err.Error(), "resume missing") {
 		t.Fatalf("expected clear resume error, got %v", err)
+	}
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got %v", err)
+	}
+	if deps.started != nil {
+		t.Fatal("missing session must not start the REPL")
+	}
+}
+
+func TestRunnerResumeNamedReportsSkippedLinesAndBanner(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	var stderr bytes.Buffer
+	deps.Stderr = &stderr
+	deps.store.entries = []model.Entry{mustRunnerMessage(t, "", "user", "hello")}
+	deps.store.skipped = []int{2, 5}
+	runner := NewRunner(deps.RunnerDeps)
+
+	if err := runner.Run(Options{Mode: ModeResumeNamed, Name: "work"}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, want := range []string{"skipped unreadable line(s) [2 5]", "resumed work (1 entries)"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr %q missing %q", stderr.String(), want)
+		}
+	}
+}
+
+func TestRunnerContinueUsesMostRecentSession(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.ListSessionsFunc = func() ([]SessionSummary, error) {
+		return []SessionSummary{{Name: "newest"}, {Name: "older"}}, nil
+	}
+	runner := NewRunner(deps.RunnerDeps)
+
+	if err := runner.Run(Options{Mode: ModeContinue}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if deps.openedName != "newest" {
+		t.Fatalf("expected opened newest, got %q", deps.openedName)
+	}
+}
+
+func TestRunnerContinueWithoutSessionsReportsError(t *testing.T) {
+	t.Parallel()
+
+	deps := fakeRunnerDeps(t)
+	deps.ListSessionsFunc = func() ([]SessionSummary, error) { return nil, nil }
+	runner := NewRunner(deps.RunnerDeps)
+
+	err := runner.Run(Options{Mode: ModeContinue})
+	if err == nil || !strings.Contains(err.Error(), "no sessions found") {
+		t.Fatalf("expected no-sessions error, got %v", err)
 	}
 }
 
@@ -354,6 +419,59 @@ func TestDefaultResumePickerRequiresSessions(t *testing.T) {
 	}
 }
 
+func TestDefaultListSessionsReadsTitlesAndSortsByRecency(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".cli-llm", "sessions")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("create session root: %v", err)
+	}
+	writeListedSession(t, root, "older", "Older title", time.Unix(1000, 0))
+	writeListedSession(t, root, "newer", "Newer title", time.Unix(2000, 0))
+	broken := filepath.Join(root, "broken.jsonl")
+	if err := os.WriteFile(broken, []byte("not-json\n"), 0o644); err != nil {
+		t.Fatalf("write broken session: %v", err)
+	}
+	if err := os.Chtimes(broken, time.Unix(3000, 0), time.Unix(3000, 0)); err != nil {
+		t.Fatalf("set broken mtime: %v", err)
+	}
+
+	summaries, err := defaultListSessions()
+	if err != nil {
+		t.Fatalf("defaultListSessions returned error: %v", err)
+	}
+	wantNames := []string{"broken", "newer", "older"}
+	wantTitles := []string{"", "Newer title", "Older title"}
+	if len(summaries) != len(wantNames) {
+		t.Fatalf("summaries = %#v, want %d entries", summaries, len(wantNames))
+	}
+	for i := range wantNames {
+		if summaries[i].Name != wantNames[i] || summaries[i].Title != wantTitles[i] {
+			t.Fatalf("summary %d = %#v, want name %q title %q", i, summaries[i], wantNames[i], wantTitles[i])
+		}
+	}
+}
+
+func writeListedSession(t *testing.T, root, name, title string, modified time.Time) {
+	t.Helper()
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	info, err := model.NewSessionInfo("", model.SessionInfo{Title: title, Created: now, Model: "mock-model"}, now)
+	if err != nil {
+		t.Fatalf("create session info: %v", err)
+	}
+	encoded, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("encode session info: %v", err)
+	}
+	path := filepath.Join(root, name+".jsonl")
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		t.Fatalf("write session %s: %v", name, err)
+	}
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatalf("set session %s mtime: %v", name, err)
+	}
+}
+
 func TestRunnerProviderFactoryReceivesDefaultModel(t *testing.T) {
 	t.Parallel()
 
@@ -394,6 +512,7 @@ func fakeRunnerDeps(t *testing.T) *runnerDepsProbe {
 			probe.started = req.State
 			return nil
 		},
+		Stderr:         io.Discard,
 		PromptNameFunc: func() (string, error) { return "default", nil },
 		ListSessionsFunc: func() ([]SessionSummary, error) {
 			return []SessionSummary{{Name: "default"}}, nil

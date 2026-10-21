@@ -6,7 +6,20 @@ Until then, entries describe internal milestones so the team can track progress.
 
 ## [Unreleased]
 
+### Added
+- `llm-session --continue` / `-c` resumes the most recently modified session,
+  and `-r` is an alias for `--resume`.
+
+### Changed
+- The `--resume` picker lists sessions by recency and shows their persisted
+  titles instead of only filename stems.
+
 ### Fixed
+- `llm-session --resume NAME` now reports a missing session instead of silently
+  starting an empty one.
+- Session loading skips malformed or torn JSONL lines (and lines above the old
+  64 KiB scanner limit) with a warning that includes the line numbers, so one
+  bad append no longer makes the history unresumable.
 - `llm-session --resume` now waits for a selection instead of silently resuming
   the first listed session, so typed input such as a session number no longer
   becomes a chat message. The picker accepts a 1-based number or an exact

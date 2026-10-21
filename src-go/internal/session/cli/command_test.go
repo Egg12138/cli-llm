@@ -185,6 +185,56 @@ func TestCommandTreatsCancelledResumeAsCleanExit(t *testing.T) {
 	}
 }
 
+func TestCommandStartsResumePickerWithShorthand(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{}
+	if code := Run([]string{"-r"}, runner); code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if runner.mode != ModeResumePicker {
+		t.Fatalf("expected resume picker mode, got %q", runner.mode)
+	}
+}
+
+func TestCommandStartsContinueMode(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{{"--continue"}, {"-c"}} {
+		runner := &fakeRunner{}
+		if code := Run(args, runner); code != 0 {
+			t.Fatalf("args %v: expected exit code 0, got %d", args, code)
+		}
+		if runner.mode != ModeContinue {
+			t.Fatalf("args %v: expected continue mode, got %q", args, runner.mode)
+		}
+		if runner.name != "" {
+			t.Fatalf("args %v: expected empty name, got %q", args, runner.name)
+		}
+	}
+}
+
+func TestCommandRejectsConflictingSessionSelection(t *testing.T) {
+	for _, args := range [][]string{{"--resume", "--continue"}, {"--continue", "work"}} {
+		runner := &fakeRunner{}
+		var stderr bytes.Buffer
+		originalStderr := commandStderr
+		commandStderr = &stderr
+		code := Run(args, runner)
+		commandStderr = originalStderr
+
+		if code != 2 {
+			t.Fatalf("args %v: expected exit code 2, got %d", args, code)
+		}
+		if runner.runs != 0 {
+			t.Fatalf("args %v: runner should not be called, got %d calls", args, runner.runs)
+		}
+		if stderr.Len() == 0 {
+			t.Fatalf("args %v: expected an error message on stderr", args)
+		}
+	}
+}
+
 func TestDefaultAppConfigReadsEnvironmentAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "env-session-key")
 	t.Setenv("OPENAI_BASE_URL", "https://env-session.example/v1")
